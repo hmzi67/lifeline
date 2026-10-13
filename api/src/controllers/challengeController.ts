@@ -2,6 +2,7 @@ import { PrismaClientInitializationError } from '@prisma/client/runtime/library'
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/database.js';
+import { notifyUser } from '../services/notificationService.js';
 
 // ---------------- Types ----------------
 type ChallengeWithRelations = {
@@ -323,6 +324,13 @@ export const joinChallenge = async (
         joinedAt: new Date(),
       },
       include: { challenge: true },
+    });
+
+    await notifyUser(userId, {
+      type: 'challenge',
+      title: 'Challenge joined',
+      body: `You joined "${challenge.name ?? 'a challenge'}". Good luck!`,
+      data: { challengeId },
     });
 
     sendResponse(res, 201, userChallenge, 'Successfully joined the challenge');

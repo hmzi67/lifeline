@@ -48,6 +48,7 @@ import paymentRoutes from './routes/paymentRoutes.js';
 import onboardingProgressRoutes from './routes/onboardingProgressRoutes.js';
 import progressRoutes from './routes/progressRoutes.js';
 import referralRoutes from './routes/referralRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 import roleRoutes from './routes/roleRoutes.js';
 import sleepRoutes from './routes/sleepLogRoutes.js';
 import sleepSoundRoutes from './routes/sleepSoundRoutes.js';
@@ -232,6 +233,9 @@ app.use('/api/coupons', couponRoutes);
 
 // Referral code routes (admin CRUD + user validate)
 app.use('/api/referral-codes', referralRoutes);
+
+// Notification inbox
+app.use('/api/notifications', notificationRoutes);
 
 // Example protected route
 // app.get('/api/protected', authenticate, (req, res) => {
