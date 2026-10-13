@@ -11,11 +11,14 @@ const mockPrisma = {
     create: jest.fn(),
     deleteMany: jest.fn(),
     findFirst: jest.fn(),
+    updateMany: jest.fn(),
   },
 };
 
+const mockTransaction = (operations: Promise<unknown>[]) => Promise.all(operations);
+
 jest.mock('@prisma/client', () => ({
-  PrismaClient: jest.fn(() => mockPrisma),
+  PrismaClient: jest.fn(() => ({ ...mockPrisma, $transaction: mockTransaction })),
 }));
 
 const {
@@ -28,6 +31,8 @@ type MockResponse = {
   body: any;
   status: jest.Mock;
   json: jest.Mock;
+  cookie: jest.Mock;
+  set: jest.Mock;
 };
 
 const createResponse = (): MockResponse => {
@@ -44,6 +49,8 @@ const createResponse = (): MockResponse => {
     response.body = body;
     return response;
   });
+  response.cookie = jest.fn(() => response);
+  response.set = jest.fn(() => response);
 
   return response;
 };
@@ -190,7 +197,9 @@ describe('Google mobile authentication', () => {
     });
 
     mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 0 });
+    mockPrisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
     mockPrisma.refreshToken.findFirst.mockResolvedValue({
+      id: 'refresh-record',
       token: refreshToken,
       user: {
         id: 'user-new',
@@ -212,6 +221,23 @@ describe('Google mobile authentication', () => {
     ) as JwtPayload).toMatchObject({
       userId: 'user-new',
       email: 'new.user@example.com',
+    });
+
+    // The refresh token is rotated so active sessions keep extending
+    const rotatedRefreshToken = refreshResponse.body.data.refreshToken;
+    expect(rotatedRefreshToken).toEqual(expect.any(String));
+    expect(rotatedRefreshToken).not.toBe(refreshToken);
+    expect(mockPrisma.refreshToken.create).toHaveBeenLastCalledWith({
+      data: {
+        token: rotatedRefreshToken,
+        userId: 'user-new',
+        expiresAt: expect.any(Date),
+      },
+    });
+    // The old token is only shortened to a brief grace window, not deleted
+    expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith({
+      where: { id: 'refresh-record', expiresAt: { gt: expect.any(Date) } },
+      data: { expiresAt: expect.any(Date) },
     });
   });
 

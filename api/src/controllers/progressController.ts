@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 import { DEFAULT_WATER_GOAL_UNIT, getDefaultWaterGoalAmount } from '../utils/waterGoal.js';
+import { config } from '../config/index.js';
 
 const prisma = new PrismaClient();
 const DEFAULT_WATER_GOAL_ML = 2500;
@@ -27,7 +28,7 @@ const getUserIdFromToken = (req: Request): string | null => {
   }
   const token = authHeader.substring(7);
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as {
+    const decoded = jwt.verify(token, config.jwt.secret) as {
       userId: string;
     };
     return decoded.userId;

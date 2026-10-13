@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
+import { config } from '../config/index.js';
 
 const prisma = new PrismaClient();
 
@@ -36,7 +37,7 @@ const authenticate = async (req: Request, res: Response, next: NextFunction) => 
     }
 
     // Verify the JWT token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as JWTPayload;
+    const decoded = jwt.verify(token, config.jwt.secret) as JWTPayload;
 
     // Optional: Verify user still exists in database
     const user = await prisma.user.findUnique({

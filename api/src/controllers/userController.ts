@@ -3,6 +3,8 @@ import bcrypt from 'bcryptjs';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { getMediaCategory } from '../middleware/upload.js';
+import { config } from '../config/index.js';
+import { deleteUserAndData } from '../services/accountDeletionService.js';
 
 const prisma = new PrismaClient();
 
@@ -59,7 +61,7 @@ const getUserIdFromAuth = (req: Request): string | null => {
   }
 
   const token = authHeader.substring(7);
-  const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as {
+  const decoded = jwt.verify(token, config.jwt.secret) as {
     userId: string;
   };
 
@@ -78,7 +80,7 @@ export const getCurrentUser = async (req: Request, res: Response) => {
     }
 
     const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as {
+    const decoded = jwt.verify(token, config.jwt.secret) as {
       userId: string;
     };
 
@@ -732,16 +734,7 @@ export const deleteUser = async (req: Request, res: Response) => {
     // ID is a string (cuid) according to schema, no need for BigInt conversion
     const userId = id;
 
-    const user = await prisma.user.delete({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        profileImage: true,
-        createdAt: true,
-      },
-    });
+    const user = await deleteUserAndData(prisma, userId);
 
     res.status(200).json({
       success: true,
@@ -821,7 +814,7 @@ export const deleteOwnAccount = async (req: Request, res: Response) => {
       });
     }
 
-    await prisma.user.delete({ where: { id: user.id } });
+    await deleteUserAndData(prisma, user.id);
 
     res.status(200).json({
       success: true,

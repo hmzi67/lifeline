@@ -28,6 +28,8 @@ interface RefreshTokenPayload {
 
 const prisma = new PrismaClient();
 
+const REFRESH_TOKEN_ROTATION_GRACE_MS = 60 * 1000;
+
 // Validation schemas
 const signupSchema = z.object({
   email: z.string().email('Please provide a valid email address'),
@@ -49,10 +51,11 @@ const generateTokens = (userId: string, email: string, roleId?: string) => {
     { expiresIn: '15m' }
   );
 
+  // jwtid keeps two refresh tokens issued in the same second distinct (token is @unique)
   const refreshToken = jwt.sign(
     { userId },
     config.jwt.refreshSecret,
-    { expiresIn: '7d' }
+    { expiresIn: '7d', jwtid: randomBytes(16).toString('hex') }
   );
 
   return { accessToken, refreshToken };
@@ -553,7 +556,7 @@ export const refreshToken = async (req: Request, res: Response) => {
     // Verify refresh token
     const decoded = jwt.verify(
       refreshToken,
-      process.env.JWT_REFRESH_SECRET || 'fallback-refresh-secret'
+      config.jwt.refreshSecret
     ) as RefreshTokenPayload;
 
     // Check if the refresh token exists in a database and is not expired
@@ -584,18 +587,48 @@ export const refreshToken = async (req: Request, res: Response) => {
       });
     }
 
-    // Generate a new access token
-    const { accessToken } = generateTokens(
+    // Rotate: issue a fresh 7-day refresh token so active users stay signed in
+    const { accessToken, refreshToken: newRefreshToken } = generateTokens(
       storedToken.user.id,
       storedToken.user.email,
       storedToken.user.roleId || undefined
     );
+
+    // The old token stays valid briefly so parallel requests that refresh with
+    // it at the same moment do not sign the user out.
+    const graceExpiresAt = new Date(Date.now() + REFRESH_TOKEN_ROTATION_GRACE_MS);
+    await prisma.$transaction([
+      prisma.refreshToken.create({
+        data: {
+          token: newRefreshToken,
+          userId: storedToken.user.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        },
+      }),
+      prisma.refreshToken.updateMany({
+        where: { id: storedToken.id, expiresAt: { gt: graceExpiresAt } },
+        data: { expiresAt: graceExpiresAt },
+      }),
+    ]);
+
+    res.cookie('refreshToken', newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    res.set({
+      'Cache-Control': 'no-store',
+      Pragma: 'no-cache',
+    });
 
     res.status(200).json({
       success: true,
       message: 'Token refreshed successfully',
       data: {
         accessToken,
+        refreshToken: newRefreshToken,
       },
     });
   } catch (error) {
@@ -632,7 +665,7 @@ export const getCurrentUser = async (req: Request, res: Response) => {
     }
 
     const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as JWTPayload;
+    const decoded = jwt.verify(token, config.jwt.secret) as JWTPayload;
 
     // No need to parse userId as integer - it's already a string (CUID)
     const user = await prisma.user.findUnique({
@@ -1370,7 +1403,7 @@ export const logoutFromAllDevices = async (req: Request, res: Response) => {
     }
 
     const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as JWTPayload;
+    const decoded = jwt.verify(token, config.jwt.secret) as JWTPayload;
 
     // Delete all refresh tokens for this user
     await prisma.refreshToken.deleteMany({

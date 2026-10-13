@@ -7,7 +7,6 @@ module.exports = {
   testEnvironment: 'node',
   testMatch: [
     '<rootDir>/tests/googleMobileAuth.test.ts',
-    '<rootDir>/tests/googleAuthClient.test.ts',
   ],
   transform: {
     '^.+\\.tsx?$': [

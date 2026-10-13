@@ -18,6 +18,7 @@ module.exports = {
     '<rootDir>/tests/catalogRouteSecurity.test.ts',
     '<rootDir>/tests/blogCommentSecurity.test.ts',
     '<rootDir>/tests/meditationControllerSecurity.test.ts',
+    '<rootDir>/tests/accountDeletion.test.ts',
   ],
   transform: {
     '^.+\\.tsx?$': [

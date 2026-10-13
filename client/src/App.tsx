@@ -32,6 +32,8 @@ const CookiePolicy = lazy(() => import('./pages/legal/CookiePolicy'));
 const CommingSoon = lazy(() => import('./pages/utility/CommingSoon'));
 const Profile = lazy(() => import('./pages/auth/Profile'));
 const DeleteAccount = lazy(() => import('./pages/legal/DeleteAccount'));
+const Support = lazy(() => import('./pages/marketing/Support'));
+const AppMarketing = lazy(() => import('./pages/marketing/AppMarketing'));
 
 function App() {
 
@@ -60,6 +62,9 @@ function App() {
               <Route path="/coming-soon" element={<CommingSoon />} />
               {/* Public account-deletion page — required by the Play Store listing */}
               <Route path="/delete-account" element={<DeleteAccount />} />
+              {/* App Store listing pages — Support URL and Marketing URL */}
+              <Route path="/support" element={<Support />} />
+              <Route path="/app" element={<AppMarketing />} />
 
               {/* Authentication routes - only accessible when not logged in */}
               <Route path="/login" element={<Login />} />

@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { config } from '../config/index.js';
 
 const prisma = new PrismaClient();
 
@@ -12,7 +13,7 @@ const getUserIdFromToken = (req: Request): string | null => {
   }
   const token = authHeader.substring(7);
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as {
+    const decoded = jwt.verify(token, config.jwt.secret) as {
       userId: string;
     };
     return decoded.userId;

@@ -11,7 +11,7 @@ const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [searchParams] = useSearchParams();
   // Social sign-in failures return here as ?error=<message> (see OAuthCallback).
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(() => {
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>((): Record<string, string> => {
     const oauthError = searchParams.get('error');
     return oauthError ? { general: oauthError } : {};
   });

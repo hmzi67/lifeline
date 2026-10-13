@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import jwt from 'jsonwebtoken';
+import { config } from '../config/index.js';
 
 interface AuthRequest extends Request {
   user?: {
@@ -85,7 +86,7 @@ const getUserFromToken = (
   const token = authHeader.substring(7);
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as JWTPayload;
+    const decoded = jwt.verify(token, config.jwt.secret) as JWTPayload;
     return { userId: decoded.userId, email: decoded.email, roleId: decoded.roleId };
   } catch {
     return null;
