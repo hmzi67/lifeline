@@ -1,5 +1,5 @@
 import api from '@/lib/axios';
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getPostLoginRedirectPath } from '@/lib/onboarding';
@@ -8,12 +8,34 @@ const OAuthCallback: React.FC = () => {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const { setToken, setUser } = useAuth();
+    // The sign-in code works once, so the exchange must not run twice (for
+    // example when StrictMode re-runs effects in development).
+    const handled = useRef(false);
 
     useEffect(() => {
-        const token = searchParams.get('token');
+        if (handled.current) return;
+        handled.current = true;
+
+        const code = searchParams.get('code');
         const error = searchParams.get('error');
 
-        const fetchUser = async () => {
+        // Drop the code from the address bar and history straight away.
+        window.history.replaceState(window.history.state, '', window.location.pathname);
+
+        const completeSignIn = async (signInCode: string) => {
+            try {
+                const exchange = await api.post('/auth/oauth/exchange', { code: signInCode });
+                const accessToken = exchange.data?.data?.accessToken;
+                if (!accessToken) throw new Error('No access token in exchange response');
+
+                // Sync the access token into AuthContext (also persists to localStorage)
+                setToken(accessToken);
+            } catch (err) {
+                console.error(err);
+                navigate(`/login?error=${encodeURIComponent('Sign-in could not be completed. Please try again.')}`, { replace: true });
+                return;
+            }
+
             try {
                 const res = await api.get('/auth/me');
                 const user = res.data?.data?.user;
@@ -66,10 +88,8 @@ const OAuthCallback: React.FC = () => {
             return;
         }
 
-        if (token) {
-            // Sync the access token into AuthContext (also persists to localStorage)
-            setToken(token);
-            fetchUser();
+        if (code) {
+            completeSignIn(code);
             return;
         }
 

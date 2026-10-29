@@ -1,5 +1,6 @@
 import winston from 'winston';
 import { config } from '../config/index.js';
+import { isDevelopment } from '../config/logging.js';
 
 // Define log levels
 const levels = {
@@ -52,7 +53,7 @@ const transports = [
 
 // Create logger instance
 export const logger = winston.createLogger({
-  level: config.logging.level,
+  level: isDevelopment ? config.logging.level : 'error',
   levels,
   format,
   transports,

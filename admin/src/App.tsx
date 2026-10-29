@@ -10,9 +10,17 @@ import ReferralComponent from './components/pages/ReferralComponent';
 import PricingPlanComponent from './components/pages/PricingPlanComponent';
 
 // ── Protected layout ──────────────────────────────────────────────────────────
+// Below Tailwind's `lg` breakpoint the open sidebar would cover most of the page.
+const isWideScreen = () => window.matchMedia('(min-width: 1024px)').matches;
+
 const AdminLayout: React.FC = () => {
-    const [activeNav, setActiveNav] = useState<string>('dashboard');
-    const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
+    const [activeNav, setActiveNavState] = useState<string>('dashboard');
+    const [sidebarOpen, setSidebarOpen] = useState<boolean>(isWideScreen);
+
+    const setActiveNav = (nav: string) => {
+        setActiveNavState(nav);
+        if (!isWideScreen()) setSidebarOpen(false);
+    };
 
     const renderContent = () => {
         switch (activeNav) {
@@ -60,8 +68,8 @@ const AdminLayout: React.FC = () => {
                 setActiveNav={setActiveNav}
                 navigationItems={navigationItems}
             />
-            <main className="flex-1 overflow-x-hidden">
-                <div className="p-8">
+            <main className="flex-1 min-w-0 overflow-x-hidden">
+                <div className="p-4 sm:p-8">
                     <Header activeNav={activeNav} />
                     {renderContent()}
                 </div>

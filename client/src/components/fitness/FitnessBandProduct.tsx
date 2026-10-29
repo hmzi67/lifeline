@@ -96,11 +96,6 @@ export const FitnessBandProduct = () => {
                 <Clock className="w-3 h-3 md:w-4 md:h-4" />
                 19 Hours ago
               </span>
-              <div className="w-5">
-                <svg width="24" height="24" viewBox="0 0 31 31" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 md:w-6 md:h-6 lg:w-5 lg:h-5">
-                  <path d="M15.8255..." fill="#3EC6C9" />
-                </svg>
-              </div>
             </div>
 
             {/* Rating */}

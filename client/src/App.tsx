@@ -8,7 +8,7 @@ import Verify from "@/pages/auth/Verify.tsx";
 import ResetPassword from "@/pages/auth/ResetPassword.tsx";
 import OAuthCallback from "@/pages/auth/OAuthCallback.tsx";
 import { AuthProvider } from './contexts/AuthContext';
-import Plan from './pages/marketing/Plan';
+import ProtectedRoute from '@/components/routes/ProtectedRoutes';
 
 
 // Lazy-loaded page components
@@ -18,12 +18,13 @@ const Blog = lazy(() => import('./pages/content/Blog'));
 const BlogReading = lazy(() => import('./pages/content/BlogReading'));
 const Login = lazy(() => import('./pages/auth/Login'));
 const Signup = lazy(() => import('./pages/auth/Signup'));
-const Goals = lazy(() => import('./pages/fitness/Goals'));
 const Analytics = lazy(() => import('./pages/fitness/Analytics'));
 const Pricing = lazy(() => import('./pages/marketing/Pricing'));
 const Affiliate = lazy(() => import('./pages/marketing/Affiliate'));
 const Contact = lazy(() => import('./pages/marketing/Contact'));
 const Checkout = lazy(() => import('@/pages/marketing/Checkout'));
+// Lazy so Stripe.js loads only on the plan page, not on every page of the site.
+const Plan = lazy(() => import('./pages/marketing/Plan'));
 const Questions = lazy(() => import('@/pages/marketing/Questions'));
 const Error = lazy(() => import('./pages/utility/Error'));
 const PrivacyPolicy = lazy(() => import('./pages/legal/PrivacyPolicy'));
@@ -73,11 +74,12 @@ function App() {
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/auth/callback" element={<OAuthCallback />} />
 
-              {/* Protected routes - only accessible when logged in */}
-              <Route path="/goals" element={<Goals />} />
+              {/* Fitness Band product page, linked from the public nav */}
               <Route path="/analytics" element={<Analytics />} />
-              <Route path="/checkout" element={<Checkout />} />
-              <Route path='/plan' element={<Plan />} />
+
+              {/* Protected routes - only accessible when logged in */}
+              <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
+              <Route path='/plan' element={<ProtectedRoute><Plan /></ProtectedRoute>} />
               <Route path="/profile" element={<Profile />} />
 
               {/* 404 route */}

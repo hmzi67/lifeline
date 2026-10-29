@@ -30,6 +30,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import api from "@/lib/axios";
+import { handleApiError, uploadFile } from "@/services/crudService";
 
 // ---------- Utility helpers ----------
 const slugify = (str: string) =>
@@ -102,7 +104,6 @@ interface Post {
   tags: string[];
   categoryId: string;
   cover: string;
-  authorId: string; // As per your endpoint requirement
   status: "draft" | "published";
 }
 
@@ -123,7 +124,6 @@ export default function BlogEditor() {
     tags: [],
     categoryId: "",
     cover: "",
-    authorId: "cmeoemmrx0000vyuskct0x3up", // TODO: Replace with dynamic author ID
     status: "draft", // draft | published
   });
 
@@ -186,23 +186,25 @@ export default function BlogEditor() {
     ta.dispatchEvent(new Event("input", { bubbles: true }));
   }, []);
 
-  const handleUploadInlineImage = useCallback((file: File | undefined) => {
+  // Images are uploaded and referenced by URL; base64 in the post body would
+  // exceed the API's request size limit and bloat every blog response.
+  const handleUploadInlineImage = useCallback(async (file: File | undefined) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      if (e.target && e.target.result) {
-        insertImageAtCursor(e.target.result);
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      insertImageAtCursor(await uploadFile(file, "/uploads"));
+    } catch (error) {
+      alert(`Image upload failed: ${handleApiError(error)}`);
+    }
   }, [insertImageAtCursor]);
 
-  const handleUploadCover = useCallback((file: File | undefined) => {
+  const handleUploadCover = useCallback(async (file: File | undefined) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) =>
-      setPost((p) => ({ ...p, cover: e.target?.result as string }));
-    reader.readAsDataURL(file);
+    try {
+      const url = await uploadFile(file, "/uploads");
+      setPost((p) => ({ ...p, cover: url }));
+    } catch (error) {
+      alert(`Cover upload failed: ${handleApiError(error)}`);
+    }
   }, [setPost]);
 
   const exportJSON = () => {
@@ -261,7 +263,6 @@ export default function BlogEditor() {
       tags: [],
       categoryId: "",
       cover: "",
-      authorId: "cmeoemmrx0000vyuskct0x3up", // Reset authorId as well
       status: "draft",
     });
   }, [setPost]);
@@ -272,39 +273,29 @@ export default function BlogEditor() {
 
     if (isPublishing) {
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/blogs`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            title: post.title,
-            slug: post.slug,
-            content: post.content,
-            excerpt: post.excerpt,
-            coverImage: post.cover, // The endpoint expects `coverImage`
-            status: "PUBLISHED", // The endpoint expects uppercase "PUBLISHED"
-            authorId: post.authorId,
-            categoryId: post.categoryId,
-          }),
+        // Through the shared client so the admin's token is sent; the API
+        // records the signed-in admin as the author.
+        await api.post("/blogs", {
+          title: post.title,
+          slug: post.slug,
+          content: post.content,
+          excerpt: post.excerpt,
+          coverImage: post.cover, // The endpoint expects `coverImage`
+          status: "PUBLISHED",
+          categoryId: post.categoryId,
         });
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
 
         alert("Blog published successfully!");
         setPost((p) => ({ ...p, status: newStatus }));
       } catch (error) {
-        console.error("Failed to publish blog:", error);
-        alert("Failed to publish blog. Check the console for details.");
+        alert(`Failed to publish blog: ${handleApiError(error)}`);
       }
     } else {
       // Logic for unpublishing if needed, for now, just update local status
       setPost((p) => ({ ...p, status: newStatus }));
       alert("Blog unpublished and saved as draft.");
     }
-  }, [setPost]);
+  }, [post, setPost]);
 
   const toolbar = [
     {

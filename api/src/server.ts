@@ -1,3 +1,4 @@
+import './config/logging.js';
 import app from './app.js';
 import { config } from './config/index.js';
 import {connectDatabase, disconnectDatabase} from './config/database.js';

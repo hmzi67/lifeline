@@ -25,6 +25,8 @@ export interface DashboardData {
   subscriptions: {
     active: number;
     totalRevenue: number;
+    /** Completed revenue per month ("YYYY-MM"), last 6 months, oldest first. */
+    monthlyRevenue: Array<{ month: string; amount: number }>;
     recentPayments: Array<{
       id: string;
       username: string;

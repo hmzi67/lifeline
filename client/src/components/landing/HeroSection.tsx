@@ -65,8 +65,8 @@ export const HeroSection: React.FC = () => {
               </span>
             </h1>
             <p className="text-sm md:text-lg lg:text-xl text-white/90 leading-relaxed mb-6 md:mb-12 max-w-xl drop-shadow-md">
-              Their guidelines recommend 150 minutes of moderate-intensity
-              aerobic physical activity each week or vigorous-intensity aerobic
+              Personalized workout, diet and fasting plans, with water, sleep
+              and progress tracking, all in one app.
             </p>
             <div className="animate-bounce-subtle">
               {

@@ -45,6 +45,7 @@ export function EditProfile({ user }: EditProfileProps) {
             lastName: formData.get("lastName")?.toString() || "",
             username: formData.get("username")?.toString() || "",
             password: formData.get("password")?.toString() || undefined,
+            currentPassword: formData.get("currentPassword")?.toString() || undefined,
             dateOfBirth: formData.get("dob")?.toString() || undefined,
             gender,
             weight: formData.get("weight") ? Number(formData.get("weight")) : undefined,
@@ -96,6 +97,10 @@ export function EditProfile({ user }: EditProfileProps) {
                         <div className="grid gap-3">
                             <Label htmlFor="password">Reset Password</Label>
                             <Input id="password" name="password" type="password" placeholder="Enter new password" />
+                        </div>
+                        <div className="grid gap-3">
+                            <Label htmlFor="currentPassword">Current Password</Label>
+                            <Input id="currentPassword" name="currentPassword" type="password" placeholder="Required to change password" />
                         </div>
                         <div className="grid gap-3">
                             <Label htmlFor="dob">Date of Birth</Label>

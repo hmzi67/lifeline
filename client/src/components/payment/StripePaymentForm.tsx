@@ -13,6 +13,8 @@ import { paymentService } from "@/services/paymentService";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface StripePaymentFormProps {
+    pricingPlanId: string;
+    /** Display only; the server charges the plan price after any coupon. */
     amount: number;
     planTitle: string;
     couponCode?: string;
@@ -37,6 +39,7 @@ const cardElementOptions = {
 };
 
 export default function StripePaymentForm({
+    pricingPlanId,
     amount,
     planTitle,
     couponCode,
@@ -93,42 +96,43 @@ export default function StripePaymentForm({
                 throw new Error("Card element not found");
             }
 
-            // 1. Create a PaymentIntent on the backend
-            const { clientSecret } = await paymentService.createPaymentIntent({
-                amount,
-                currency: "usd",
-                planName: planTitle,
+            // 1. The server prices the plan (and coupon) and creates the Stripe intent
+            const checkout = await paymentService.createSubscription({
+                pricingPlanId,
                 couponCode,
             });
 
-            // 2. Confirm the card payment with Stripe using the client secret
-            const { error: confirmError, paymentIntent } =
-                await stripe.confirmCardPayment(clientSecret, {
-                    payment_method: {
-                        card: cardNumberElement,
-                        billing_details: {
-                            name: cardholderName,
-                            email: email,
-                        },
-                    },
-                });
-
-            if (confirmError) {
-                throw new Error(confirmError.message);
+            // 2. Confirm the card with Stripe. Free trials save the card (SetupIntent)
+            // and are charged when the trial ends.
+            const paymentMethod = {
+                card: cardNumberElement,
+                billing_details: {
+                    name: cardholderName,
+                    email: email,
+                },
+            };
+            if (checkout.intentType === "setup") {
+                const { error: setupError, setupIntent } = await stripe.confirmCardSetup(
+                    checkout.clientSecret,
+                    { payment_method: paymentMethod }
+                );
+                if (setupError) throw new Error(setupError.message);
+                if (!setupIntent || setupIntent.status !== "succeeded") {
+                    throw new Error("Your card could not be saved for the trial.");
+                }
+            } else {
+                const { error: confirmError, paymentIntent } =
+                    await stripe.confirmCardPayment(checkout.clientSecret, {
+                        payment_method: paymentMethod,
+                    });
+                if (confirmError) throw new Error(confirmError.message);
+                if (!paymentIntent || paymentIntent.status !== "succeeded") {
+                    throw new Error("Payment was not completed successfully.");
+                }
             }
 
-            if (!paymentIntent || paymentIntent.status !== "succeeded") {
-                throw new Error("Payment was not completed successfully.");
-            }
-
-            // 3. Confirm with the backend so it records the subscription payment
-            await paymentService.confirmPayment({
-                paymentIntentId: paymentIntent.id,
-                paymentMethodId:
-                    typeof paymentIntent.payment_method === "string"
-                        ? paymentIntent.payment_method
-                        : undefined,
-            });
+            // 3. The server verifies the payment with Stripe and grants VIP access
+            await paymentService.confirmSubscription(checkout.subscriptionId);
 
             // Call onSuccess callback
             if (onSuccess) {

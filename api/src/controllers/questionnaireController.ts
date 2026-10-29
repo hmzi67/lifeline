@@ -21,6 +21,27 @@ interface JWTPayload {
 const prisma = new PrismaClient();
 
 // Validation schemas with arrays for multi-value fields
+// Same rule as the app's onboarding: users must be 18 to 75 years old.
+export const MIN_AGE = 18;
+export const MAX_AGE = 75;
+export const ageOn = (dateOfBirth: Date, today = new Date()) => {
+  let age = today.getUTCFullYear() - dateOfBirth.getUTCFullYear();
+  const birthdayPassed =
+    today.getUTCMonth() > dateOfBirth.getUTCMonth() ||
+    (today.getUTCMonth() === dateOfBirth.getUTCMonth() && today.getUTCDate() >= dateOfBirth.getUTCDate());
+  return birthdayPassed ? age : age - 1;
+};
+const dateOfBirthSchema = z
+  .string()
+  .datetime()
+  .optional()
+  .or(z.date().optional())
+  .refine((value) => {
+    if (value === undefined) return true;
+    const age = ageOn(new Date(value));
+    return age >= MIN_AGE && age <= MAX_AGE;
+  }, { message: `Age must be between ${MIN_AGE} and ${MAX_AGE} years` });
+
 const questionnaireSchema = z.object({
   gender: z.string().max(10).optional(), // Changed from enum to string to match VarChar(10)
   goal: z.string().optional(), // Removed max length as it's Text in DB
@@ -31,7 +52,7 @@ const questionnaireSchema = z.object({
   typicalDayType: z.string().optional(), // Removed max length as it's Text in DB
   physicalLimitations: z.string().optional(), // Removed max length as it's Text in DB
   bodyFocusArea: z.array(z.string()).optional(), // Removed max length as it's Text[] in DB
-  dateOfBirth: z.string().datetime().optional().or(z.date().optional()),
+  dateOfBirth: dateOfBirthSchema,
   height: z.number().positive().optional(), // Float in DB
   heightUnit: z.string().max(10).optional(), // Changed from enum to string to match VarChar(10)
   weight: z.number().positive().optional(), // Float in DB
@@ -51,7 +72,7 @@ const fieldSchemas = {
   typicalDayType: z.object({ typicalDayType: z.string().optional() }),
   physicalLimitations: z.object({ physicalLimitations: z.string().optional() }),
   bodyFocusArea: z.object({ bodyFocusArea: z.array(z.string()).optional() }),
-  dateOfBirth: z.object({ dateOfBirth: z.string().datetime().optional().or(z.date().optional()) }),
+  dateOfBirth: z.object({ dateOfBirth: dateOfBirthSchema }),
   // Merged schemas for height and weight with their units
   heightData: z.object({
     height: z.number().positive().optional(),
@@ -97,7 +118,8 @@ const handleError = (res: Response, error: any, operation: string) => {
   if (error instanceof z.ZodError) {
     return res.status(400).json({
       success: false,
-      message: 'Validation error',
+      // The app shows `message`, so lead with the actual reason.
+      message: error.errors[0]?.message || 'Validation error',
       errors: error.errors.map(err => ({
         field: err.path.join('.'),
         message: err.message,
@@ -131,11 +153,22 @@ const upsertQuestionnaire = async (userId: string, data: any) => {
 
   const existing = await prisma.questionnaire.findFirst({ where: { userId } });
 
-  if (existing) {
-    return prisma.questionnaire.update({ where: { id: existing.id }, data: processedData });
-  } else {
-    return prisma.questionnaire.create({ data: { userId, ...processedData } });
+  const saved = existing
+    ? await prisma.questionnaire.update({ where: { id: existing.id }, data: processedData })
+    : await prisma.questionnaire.create({ data: { userId, ...processedData } });
+
+  // Keep a weight history (latest reading per day) for the weight trend charts.
+  if (typeof processedData.weight === 'number' && processedData.weight > 0) {
+    const date = new Date(new Date().toISOString().split('T')[0]);
+    const unit = saved.weightUnit ?? null;
+    await prisma.weightLog.upsert({
+      where: { userId_date: { userId, date } },
+      create: { userId, date, weight: processedData.weight, unit },
+      update: { weight: processedData.weight, unit, loggedAt: new Date() },
+    });
   }
+
+  return saved;
 };
 
 const getQuestionnaireField = async (
@@ -279,10 +312,8 @@ export const getUserQuestionnaire = async (req: Request, res: Response) => {
 
     const questionnaire = await prisma.questionnaire.findFirst({ where: { userId: user.userId } });
 
-    if (!questionnaire)
-      return res.status(404).json({ success: false, message: 'Questionnaire not found' });
-
-    return res.status(200).json({ success: true, data: { questionnaire } });
+    // A new user has not answered anything yet; that is a normal state, not a 404.
+    return res.status(200).json({ success: true, data: { questionnaire: questionnaire ?? null } });
   } catch (error) {
     return handleError(res, error, 'Get questionnaire');
   }
@@ -327,7 +358,9 @@ export const getHeightData = (req: Request, res: Response) =>
   getQuestionnaireFields(req, res, ['height', 'heightUnit'], 'heightData');
 
 export const getWeightData = (req: Request, res: Response) =>
-  getQuestionnaireFields(req, res, ['weight', 'weightUnit'], 'weightData');
+  // goalWeight and height ride along so the Home weight card can show progress
+  // to goal and a BMI status from one request.
+  getQuestionnaireFields(req, res, ['weight', 'weightUnit', 'goalWeight', 'height', 'heightUnit'], 'weightData');
 
 export const updateHeightData = (req: Request, res: Response) =>
   updateQuestionnaireFields(req, res, 'heightData', ['height', 'heightUnit'], 'heightData');

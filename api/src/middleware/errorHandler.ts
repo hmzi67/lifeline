@@ -111,7 +111,8 @@ const errorHandler = (
 
     // Set default values
     error.statusCode = error.statusCode || 500;
-    error.isOperational = error.isOperational || false;
+    // Client errors raised by Express middleware (e.g. 413 body too large) are safe to report as-is.
+    error.isOperational = error.isOperational || ((err as any).expose === true && error.statusCode < 500);
 
     if (process.env.NODE_ENV === 'development') {
         sendErrorDev(error, res);

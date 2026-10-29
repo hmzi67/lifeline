@@ -11,6 +11,10 @@ const mockPrisma = {
   refreshToken: {
     create: jest.fn(),
   },
+  oauthLoginCode: {
+    create: jest.fn(),
+    deleteMany: jest.fn(),
+  },
 };
 
 jest.mock('@prisma/client', () => ({
@@ -162,7 +166,8 @@ describe('Apple web authentication', () => {
     };
     mockPrisma.user.findUnique.mockResolvedValue(null);
     mockPrisma.user.create.mockResolvedValue(createdUser);
-    mockPrisma.refreshToken.create.mockResolvedValue({ id: 'refresh-record' });
+    mockPrisma.oauthLoginCode.create.mockResolvedValue({ id: 'code-record' });
+    mockPrisma.oauthLoginCode.deleteMany.mockResolvedValue({ count: 0 });
     const response = createResponse();
 
     await appleAuthCallback({
@@ -175,8 +180,12 @@ describe('Apple web authentication', () => {
     } as any, response);
 
     expect(response.location.startsWith(`${FRONTEND_URL}/auth/callback?`)).toBe(true);
-    expect(callbackResult(response).get('token')).toEqual(expect.any(String));
-    expect(response.cookies.refreshToken.options).toEqual(expect.objectContaining({ httpOnly: true }));
+    // Only a single-use code goes in the URL; tokens come from the exchange.
+    expect(callbackResult(response).get('code')).toEqual(expect.any(String));
+    expect(callbackResult(response).get('token')).toBeNull();
+    expect(response.cookies.refreshToken).toBeUndefined();
+    expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    expect(response.cookies.oauth_login.options).toEqual(expect.objectContaining({ httpOnly: true, sameSite: 'lax' }));
     expect(mockPrisma.user.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ username: 'jane', subject: 'apple-subject' }),
     }));
@@ -234,6 +243,6 @@ describe('Apple web authentication', () => {
     } as any, response);
 
     expect(callbackResult(response).get('error')).toBe('apple_account_conflict');
-    expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    expect(mockPrisma.oauthLoginCode.create).not.toHaveBeenCalled();
   });
 });

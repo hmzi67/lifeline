@@ -7,27 +7,14 @@ const api = axios.create({
   withCredentials: true, // Needed to send refresh token cookie
 });
 
-// Public routes that don't require authentication
-const PUBLIC_ROUTES = [
-  '/blogs',
-  '/blog-categories',
-  '/health',
-];
-
-// Helper function to check if route is public
-const isPublicRoute = (url: string): boolean => {
-  return PUBLIC_ROUTES.some(route => url?.includes(route));
-};
-
-// Request interceptor: Add access token from localStorage
+// Request interceptor: Add access token from localStorage. Always sent: the
+// admin writes to routes such as /blogs and /blogs/categories that are public
+// only for reads, and public endpoints ignore the header.
 api.interceptors.request.use(
   (config) => {
-    // Only add token if it's not a public route
-    if (!isPublicRoute(config.url || '')) {
-      const token = localStorage.getItem("token");
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
+    const token = localStorage.getItem("token");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
@@ -52,13 +39,9 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // Don't try to refresh token for public routes
-    if (isPublicRoute(originalRequest.url || '')) {
-      return Promise.reject(error);
-    }
-
-    // Prevent infinite loops
-    if (originalRequest.url === '/auth/refresh-token') {
+    // Prevent infinite loops; a 401 from login/logout is a wrong password or an
+    // already-ended session, not an expired token, so the caller shows it as is.
+    if (['/auth/refresh-token', '/auth/login', '/auth/logout'].includes(originalRequest.url)) {
       return Promise.reject(error);
     }
 

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/database.js';
+import { isExpoPushToken, sendFcm } from './fcmService.js';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
@@ -21,6 +22,12 @@ const getPushTarget = async (userId: string): Promise<string | null> => {
   // Notifications default to enabled until the user turns them off.
   if (valueByKey.get('notifications_enabled') === 'false') return null;
   return valueByKey.get('push_token') || null;
+};
+
+// The app was uninstalled or signed out on that device. Only removes the token that failed,
+// in case the user registered a new one meanwhile.
+const forgetPushToken = async (userId: string, token: string) => {
+  await prisma.appSetting.deleteMany({ where: { scope: `user:${userId}`, key: 'push_token', value: token } });
 };
 
 const sendExpoPush = async (to: string, input: NotificationInput, notificationId: string) => {
@@ -59,8 +66,16 @@ export const createNotification = async (userId: string, input: NotificationInpu
 
   try {
     const pushToken = await getPushTarget(userId);
-    if (pushToken) {
+    if (pushToken && isExpoPushToken(pushToken)) {
+      // Registered by an app build from before FCM.
       await sendExpoPush(pushToken, input, notification.id);
+    } else if (pushToken) {
+      const result = await sendFcm(pushToken, {
+        title: input.title,
+        body: input.body ?? undefined,
+        data: { notificationId: notification.id, type: input.type ?? 'general', ...((input.data as object) ?? {}) },
+      });
+      if (result === 'invalid-token') await forgetPushToken(userId, pushToken);
     }
   } catch (error) {
     console.error('Push notification delivery error:', error);

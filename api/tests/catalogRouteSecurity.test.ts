@@ -100,17 +100,29 @@ describe('catalog mutation route security', () => {
     }
   });
 
-  it('keeps challenge administration admin-only and joining authenticated', () => {
+  it('keeps challenge administration admin-only and joining/submitting authenticated', () => {
     const mutationLayers = (challengeRouter.stack as RouteLayer[]).filter((layer) =>
       layer.route && Object.keys(layer.route.methods).some((method) => mutationMethods.has(method))
     );
-    const joinLayer = mutationLayers.find((layer) => layer.route!.path === '/:id/join');
-    const adminLayers = mutationLayers.filter((layer) => layer !== joinLayer);
+    const userPaths = ['/:id/join', '/:id/complete', '/submit', '/apple-purchases', '/:id/checkout', '/:id/checkout/confirm', '/:id/report'];
+    const userLayers = mutationLayers.filter((layer) => userPaths.includes(layer.route!.path));
+    const adminLayers = mutationLayers.filter((layer) => !userLayers.includes(layer));
 
-    expect(joinLayer).toBeDefined();
-    expect(adminLayers).toHaveLength(3);
-    expect(joinLayer!.route!.stack[0].handle).toBe(mockAuthenticate);
-    expect(joinLayer!.route!.stack.map((entry) => entry.handle)).not.toContain(mockAdminAuthorization);
+    expect(userLayers).toHaveLength(7);
+    // create, update, delete, approve/reject and resolve reports
+    expect(adminLayers).toHaveLength(5);
+    for (const layer of userLayers) {
+      expect(layer.route!.stack[0].handle).toBe(mockAuthenticate);
+      expect(layer.route!.stack.map((entry) => entry.handle)).not.toContain(mockAdminAuthorization);
+    }
+
+    const pendingLayer = (challengeRouter.stack as RouteLayer[]).find(
+      (layer) => layer.route?.path === '/approvals/pending',
+    );
+    expect(pendingLayer!.route!.stack.map((entry) => entry.handle).slice(0, 2)).toEqual([
+      mockAuthenticate,
+      mockAdminAuthorization,
+    ]);
 
     for (const layer of adminLayers) {
       const handlers = layer.route!.stack.map((entry) => entry.handle);

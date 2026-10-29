@@ -94,10 +94,22 @@ export const getCheatDayById = async (req: Request, res: Response): Promise<void
   }
 };
 
+/**
+ * Calories/macros arrive as numbers (JSON) or strings (multipart with an image).
+ * Returns undefined when absent, null when cleared or invalid.
+ */
+const nutrient = (value: unknown, integer = false): number | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return integer ? Math.round(parsed) : parsed;
+};
+
 // Log a cheat day meal
 export const logCheatDay = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { userId, foodName, image, mealType, portionSize } = req.body;
+    const { userId, foodName, image, mealType, portionSize, calories, protein, carbs, fat } = req.body;
 
     const authUser = (req as AuthenticatedRequest).user;
     if (!userId || authUser?.id !== userId) {
@@ -142,6 +154,10 @@ export const logCheatDay = async (req: Request, res: Response): Promise<void> =>
         image: imageUrl,
         mealType: mealType || null,
         portionSize: portionSize || null,
+        calories: nutrient(calories, true) ?? null,
+        protein: nutrient(protein) ?? null,
+        carbs: nutrient(carbs) ?? null,
+        fat: nutrient(fat) ?? null,
         loggedAt: new Date()
       },
       include: {
@@ -174,7 +190,7 @@ export const logCheatDay = async (req: Request, res: Response): Promise<void> =>
 export const updateCheatDay = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { foodName, image, mealType, portionSize } = req.body;
+    const { foodName, image, mealType, portionSize, calories, protein, carbs, fat } = req.body;
 
     const existingCheatDay = await prisma.cheatDay.findUnique({
       where: { id }
@@ -208,6 +224,9 @@ export const updateCheatDay = async (req: Request, res: Response): Promise<void>
     if (imageUrl !== undefined) updateData.image = imageUrl;
     if (mealType !== undefined) updateData.mealType = mealType;
     if (portionSize !== undefined) updateData.portionSize = portionSize;
+    for (const [field, value] of Object.entries({ calories: nutrient(calories, true), protein: nutrient(protein), carbs: nutrient(carbs), fat: nutrient(fat) })) {
+      if (value !== undefined) updateData[field] = value;
+    }
 
     const cheatDay = await prisma.cheatDay.update({
       where: { id },

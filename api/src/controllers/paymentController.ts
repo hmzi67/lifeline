@@ -2,13 +2,15 @@ import { PrismaClient } from '@prisma/client';
 import { Request, Response } from 'express';
 import Stripe from 'stripe';
 import { z } from 'zod';
+import { handleChallengePaymentIntent } from '../services/challengePaymentService.js';
+import { applyDiscount, CouponError, findUsableCoupon, recordCouponUsage } from '../services/couponService.js';
 import { findActiveAppStoreLicense } from '../services/subscriptionAccessService.js';
 
 const prisma = new PrismaClient();
 
 let stripeClient: Stripe | null = null;
 
-const getStripeClient = (): Stripe | null => {
+export const getStripeClient = (): Stripe | null => {
   if (stripeClient) return stripeClient;
 
   const secretKey = process.env.STRIPE_SECRET_KEY;
@@ -22,24 +24,13 @@ const getStripeClient = (): Stripe | null => {
 };
 
 // Validation schemas
-const createPaymentIntentSchema = z.object({
-  amount: z.number().positive('Amount must be positive'),
-  currency: z.string().default('usd'),
-  planName: z.string().optional(),
-  planId: z.string().optional(),
-  couponCode: z.string().optional(),
-  referralCode: z.string().optional(),
-});
-
-const confirmPaymentSchema = z.object({
-  paymentIntentId: z.string().min(1, 'Payment Intent ID is required'),
-  paymentMethodId: z.string().optional(),
-  userId: z.string().optional(),
-});
-
 const createSubscriptionSchema = z.object({
   pricingPlanId: z.string().min(1, 'Pricing plan ID is required'),
+  couponCode: z.string().trim().min(1).optional(),
 });
+
+// Stripe's minimum charge in USD.
+export const MIN_CARD_CHARGE = 0.5;
 
 const confirmSubscriptionSchema = z.object({
   subscriptionId: z.string().min(1, 'Subscription ID is required'),
@@ -173,6 +164,10 @@ const finalizePaidAccess = async (
         },
       });
     }
+
+    if (paymentIntent.metadata?.couponCode) {
+      await recordCouponUsage(tx, paymentIntent.metadata.couponCode, payment.userId, payment.id);
+    }
   });
 };
 
@@ -229,158 +224,16 @@ const finalizeTrialAccess = async (
         },
       });
     }
+
+    if (setupIntent.metadata?.couponCode) {
+      await recordCouponUsage(tx, setupIntent.metadata.couponCode, payment.userId, payment.id);
+    }
   });
 };
 
 /**
  * Create a Stripe Payment Intent
  */
-export const createPaymentIntent = async (req: Request, res: Response) => {
-  try {
-    const stripe = getStripeClient();
-    if (!stripe) {
-      return res.status(503).json({
-        error: 'Stripe not configured',
-        message: 'Set STRIPE_SECRET_KEY to enable payments',
-      });
-    }
-
-    // Validate request body
-    const validatedData = createPaymentIntentSchema.parse(req.body);
-    const userId = (req as any).user?.id;
-
-    // Create payment intent with Stripe
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(validatedData.amount * 100), // Convert to cents
-      currency: validatedData.currency,
-      automatic_payment_methods: {
-        enabled: true,
-      },
-      metadata: {
-        userId: userId || '',
-        planName: validatedData.planName || '',
-        planId: validatedData.planId || '',
-        couponCode: validatedData.couponCode || '',
-        referralCode: validatedData.referralCode || '',
-      },
-    });
-
-    res.status(200).json({
-      success: true,
-      data: {
-        clientSecret: paymentIntent.client_secret,
-        paymentIntentId: paymentIntent.id,
-      },
-      message: 'Payment intent created successfully',
-    });
-  } catch (error) {
-    console.error('Error creating payment intent:', error);
-    
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        error: 'Validation error',
-        details: error.errors,
-      });
-    }
-
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'Failed to create payment intent',
-    });
-  }
-};
-
-/**
- * Confirm payment and create subscription payment record
- */
-export const confirmPayment = async (req: Request, res: Response) => {
-  try {
-    const stripe = getStripeClient();
-    if (!stripe) {
-      return res.status(503).json({
-        error: 'Stripe not configured',
-        message: 'Set STRIPE_SECRET_KEY to enable payments',
-      });
-    }
-
-    // Validate request body
-    const validatedData = confirmPaymentSchema.parse(req.body);
-
-    // Retrieve payment intent from Stripe to verify
-    const paymentIntent = await stripe.paymentIntents.retrieve(
-      validatedData.paymentIntentId
-    );
-
-    if (paymentIntent.status !== 'succeeded') {
-      return res.status(400).json({
-        success: false,
-        message: 'Payment has not succeeded',
-      });
-    }
-
-    // Get user ID from authenticated request or body
-    const userId = (req as any).user?.id || validatedData.userId || paymentIntent.metadata.userId;
-
-    if (!userId) {
-      return res.status(401).json({
-        error: 'User not authenticated',
-      });
-    }
-
-    // Create subscription payment record in database
-    const subscriptionPayment = await prisma.subscriptionPayment.create({
-      data: {
-        userId: userId,
-        planName: paymentIntent.metadata.planName || 'Premium Plan',
-        amount: paymentIntent.amount / 100, // Convert from cents
-        method: 'stripe',
-        status: 'COMPLETED',
-        createdAt: new Date(),
-      },
-    });
-
-    // ponytail: record coupon usage if a coupon was applied
-    const couponCode = paymentIntent.metadata.couponCode;
-    if (couponCode) {
-      const coupon = await prisma.couponCode.findUnique({ where: { code: couponCode.toUpperCase() } });
-      if (coupon && coupon.isActive && coupon.currentUses < coupon.maxUses) {
-        await prisma.$transaction([
-          prisma.couponUsage.create({
-            data: { couponId: coupon.id, userId, paymentId: subscriptionPayment.id },
-          }),
-          prisma.couponCode.update({
-            where: { id: coupon.id },
-            data: { currentUses: { increment: 1 } },
-          }),
-        ]);
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      data: {
-        subscriptionId: subscriptionPayment.id,
-        paymentIntentId: paymentIntent.id,
-      },
-      message: 'Payment confirmed successfully',
-    });
-  } catch (error) {
-    console.error('Error confirming payment:', error);
-    
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        error: 'Validation error',
-        details: error.errors,
-      });
-    }
-
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'Failed to confirm payment',
-    });
-  }
-};
-
 /**
  * Create a direct Stripe intent using the server-side pricing plan.
  *
@@ -405,7 +258,7 @@ export const createSubscription = async (req: Request, res: Response) => {
       });
     }
 
-    const { pricingPlanId } = createSubscriptionSchema.parse(req.body);
+    const { pricingPlanId, couponCode: requestedCoupon } = createSubscriptionSchema.parse(req.body);
     const [plan, user] = await Promise.all([
       prisma.pricingPlan.findFirst({
         where: { id: pricingPlanId, isActive: true },
@@ -435,12 +288,28 @@ export const createSubscription = async (req: Request, res: Response) => {
       });
     }
 
+    // The price always comes from the plan; a coupon is checked here, never trusted from the client.
+    let price = Number(plan.price);
+    let couponCode: string | undefined;
+    if (requestedCoupon) {
+      const coupon = await findUsableCoupon(prisma, requestedCoupon, userId);
+      price = applyDiscount(price, coupon.discountPercent);
+      couponCode = coupon.code;
+    }
+    if (price < MIN_CARD_CHARGE) {
+      return res.status(400).json({
+        success: false,
+        message: 'This coupon cannot be used for card checkout. Please contact support.',
+      });
+    }
+
     const customerId = await getOrCreateStripeCustomer(stripe, userId);
     const metadata = {
       userId,
       pricingPlanId: plan.id,
       planName: plan.name,
       durationMonths: String(plan.durationMonths),
+      ...(couponCode ? { couponCode } : {}),
     };
     const trialEligible = plan.trialDays > 0 && !user.trialUsedAt;
     const trialEndsAt = trialEligible
@@ -451,7 +320,8 @@ export const createSubscription = async (req: Request, res: Response) => {
       const setupIntent = await stripe.setupIntents.create({
         customer: customerId,
         usage: 'off_session',
-        automatic_payment_methods: { enabled: true },
+        // Card only: renewals charge the saved method off-session, which wallets like Cash App Pay don't reliably support.
+        payment_method_types: ['card'],
         metadata,
       });
 
@@ -468,7 +338,7 @@ export const createSubscription = async (req: Request, res: Response) => {
           pricingPlanId: plan.id,
           planName: plan.name,
           durationMonths: plan.durationMonths,
-          amount: plan.price,
+          amount: price,
           method: 'stripe',
           status: 'SETUP_PENDING',
           createdAt: new Date(),
@@ -492,11 +362,12 @@ export const createSubscription = async (req: Request, res: Response) => {
     }
 
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(Number(plan.price) * 100),
+      amount: Math.round(price * 100),
       currency: 'usd',
       customer: customerId,
       setup_future_usage: 'off_session',
-      automatic_payment_methods: { enabled: true },
+      // Card only: renewals charge the saved method off-session, which wallets like Cash App Pay don't reliably support.
+      payment_method_types: ['card'],
       metadata,
     });
 
@@ -513,7 +384,7 @@ export const createSubscription = async (req: Request, res: Response) => {
         pricingPlanId: plan.id,
         planName: plan.name,
         durationMonths: plan.durationMonths,
-        amount: plan.price,
+        amount: price,
         method: 'stripe',
         status: 'PENDING',
         createdAt: new Date(),
@@ -535,6 +406,10 @@ export const createSubscription = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error creating subscription:', error);
+
+    if (error instanceof CouponError) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
 
     if (error instanceof z.ZodError) {
       return res.status(400).json({
@@ -780,6 +655,7 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
     case 'payment_intent.succeeded': {
       const paymentIntent = event.data.object as Stripe.PaymentIntent;
       console.log('PaymentIntent succeeded:', paymentIntent.id);
+      if (await handleChallengePaymentIntent(paymentIntent)) break;
       const payment = await prisma.subscriptionPayment.findFirst({
         where: { stripePaymentIntentId: paymentIntent.id },
         select: { id: true },
@@ -802,6 +678,7 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
     case 'payment_intent.payment_failed': {
       const failedPayment = event.data.object as Stripe.PaymentIntent;
       console.log('PaymentIntent failed:', failedPayment.id);
+      if (await handleChallengePaymentIntent(failedPayment)) break;
       await prisma.subscriptionPayment.updateMany({
         where: { stripePaymentIntentId: failedPayment.id } as any,
         data: { status: 'FAILED' } as any,

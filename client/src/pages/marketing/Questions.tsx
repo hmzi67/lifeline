@@ -21,14 +21,15 @@ import GoBack from "@/components/common/GoBack";
 import DietImage from "@/assets/Q-thankyou/Diet Applause.png";
 import ExerciseMenVideo from "@/assets/Q-thankyou/men-exercise.mp4"
 import ExerciseWomenVideo from "@/assets/Q-thankyou/women-exercise.mp4"
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { findMissingQuestionnaireStep, hasCompletedPayment } from "@/lib/onboarding";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function Questions() {
   const [searchParams] = useSearchParams();
   const restart = searchParams.get("restart") === "true";
-  const { user } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [hasPaid, setHasPaid] = useState(false);
@@ -48,6 +49,13 @@ export default function Questions() {
 
   // fetch questionnaire from API on mount
   useEffect(() => {
+    if (authLoading) return;
+    // The questionnaire belongs to an account; send visitors to sign in instead
+    // of letting the request fail first.
+    if (!isAuthenticated) {
+      navigate("/login", { replace: true });
+      return;
+    }
     const fetchQuestionnaire = async () => {
       try {
         const res = await api.get("/questionnaire");
@@ -86,7 +94,7 @@ export default function Questions() {
     };
 
     fetchQuestionnaire();
-  }, [restart, user?.id]);
+  }, [restart, user?.id, authLoading, isAuthenticated, navigate]);
 
   // step navigation
   const goToNext = (gender: string) => {

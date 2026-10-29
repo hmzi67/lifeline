@@ -39,6 +39,7 @@ export const deleteUserAndData = async (prisma: PrismaClient, userId: string) =>
     await tx.userWaterGoal.deleteMany(byUser);
     await tx.waterIntakeLog.deleteMany(byUser);
     await tx.userFavoriteMeditation.deleteMany(byUser);
+    await tx.userMeditationLog.deleteMany(byUser);
     await tx.blogComment.deleteMany(byUser);
     await tx.couponUsage.deleteMany(byUser);
     await tx.questionnaire.deleteMany(byUser);

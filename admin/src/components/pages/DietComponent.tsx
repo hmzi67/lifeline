@@ -1124,9 +1124,9 @@ const DietComponent: React.FC = () => {
     // ─────────────────────────────────────────────────────────────────────────
     const renderListView = () => (
         <div className="space-y-8">
-            <div className="bg-white rounded-2xl shadow-lg p-8">
+            <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-8">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-8">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
                     <div className="flex items-center gap-4">
                         <div className="p-3 bg-gradient-to-r from-teal-100 to-cyan-100 rounded-xl">
                             <Salad className="w-6 h-6 text-teal-600" />

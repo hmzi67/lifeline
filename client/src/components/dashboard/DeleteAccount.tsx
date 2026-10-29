@@ -15,6 +15,9 @@ import { AlertTriangle, Eye, EyeOff, Trash2 } from "lucide-react";
 import api from "@/lib/axios.ts";
 import { useAuth } from "@/contexts/AuthContext";
 
+/** Typed by Google/Apple accounts, which have no password to re-enter; must match the API. */
+const DELETION_PHRASE = "DELETE";
+
 export default function DeleteAccount() {
   const { logout } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
@@ -23,32 +26,49 @@ export default function DeleteAccount() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  // Google/Apple accounts have no password; they confirm by typing the phrase.
+  const [hasPassword, setHasPassword] = useState(true);
+  const [phrase, setPhrase] = useState("");
 
   const resetForm = () => {
     setEmail("");
     setPassword("");
+    setPhrase("");
     setShowPassword(false);
     setError("");
   };
 
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
-    if (!open) resetForm();
+    if (!open) {
+      resetForm();
+      return;
+    }
+    api
+      .get("/user/profile")
+      .then((res) => setHasPassword(res.data?.data?.user?.hasPassword !== false))
+      .catch(() => setHasPassword(true));
   };
 
   const deleteAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    if (!email.trim() || !password) {
+    if (hasPassword && (!email.trim() || !password)) {
       setError("Please enter both your email and password to confirm.");
+      return;
+    }
+    if (!hasPassword && phrase.trim().toUpperCase() !== DELETION_PHRASE) {
+      setError(`Please type ${DELETION_PHRASE} to confirm.`);
       return;
     }
 
     setLoading(true);
     try {
       await api.delete("/user/account", {
-        data: { email: email.trim(), password },
+        data: hasPassword
+          ? { email: email.trim(), password }
+          : { confirmation: DELETION_PHRASE },
       });
 
       setIsOpen(false);
@@ -86,12 +106,16 @@ export default function DeleteAccount() {
           </DialogTitle>
           <DialogDescription className="text-gray-600">
             This action cannot be undone. Your profile, plans and all tracked
-            progress will be permanently removed from our servers. Confirm with
-            your email and password to continue.
+            progress will be permanently removed from our servers.{" "}
+            {hasPassword
+              ? "Confirm with your email and password to continue."
+              : `You signed up with Google or Apple, so type ${DELETION_PHRASE} to confirm.`}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={deleteAccount} className="space-y-4 mt-2">
+          {hasPassword ? (
+            <>
           <div className="space-y-2">
             <Label htmlFor="delete-email" className="text-gray-700">
               Email
@@ -137,6 +161,24 @@ export default function DeleteAccount() {
               </button>
             </div>
           </div>
+            </>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="delete-phrase" className="text-gray-700">
+                Type {DELETION_PHRASE} to confirm
+              </Label>
+              <Input
+                id="delete-phrase"
+                autoComplete="off"
+                autoCapitalize="characters"
+                placeholder={DELETION_PHRASE}
+                value={phrase}
+                onChange={(e) => setPhrase(e.target.value)}
+                className="h-11"
+                disabled={loading}
+              />
+            </div>
+          )}
 
           {error && (
             <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">

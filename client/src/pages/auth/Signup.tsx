@@ -25,7 +25,8 @@ const Signup: React.FC = () => {
 
     try {
       await signup(name, email, password);
-      navigate("/verify");
+      // Verify pre-fills the address from ?email= so it need not be typed again.
+      navigate(`/verify?email=${encodeURIComponent(email)}`);
     } catch (error: any) {
       setLoading(false);
       if (Array.isArray(error)) {

@@ -36,10 +36,12 @@ class WaterIntakeController {
     res: Response
   ): Promise<void> {
     try {
-      const { userId, date, timeStart, timeEnd, amount, unit, drinkType, notes } = req.body;
+      const { userId, date, timeStart, timeEnd, unit, drinkType, notes } = req.body;
       const today = new Date().toISOString().split('T')[0];
+      // Column is Int; a fractional amount would make Prisma throw a 500.
+      const amount = typeof req.body.amount === 'number' ? Math.round(req.body.amount) : null;
 
-      if (!amount || typeof amount !== 'number' || amount <= 0) {
+      if (!amount || amount <= 0) {
         res.status(400).json({
           success: false,
           message: "Amount is required and must be a positive number",
@@ -74,9 +76,6 @@ class WaterIntakeController {
         return;
       }
 
-      // Default to today's date if not provided
-      const logDate = date ? new Date(date) : new Date(new Date().toISOString().split('T')[0]);
-
       const waterIntake = await prisma.waterIntakeLog.create({
         data: {
           userId: resolvedUserId,
@@ -85,7 +84,7 @@ class WaterIntakeController {
             ? new Date(`1970-01-01T${timeStart}:00.000Z`)
             : null,
           timeEnd: timeEnd ? new Date(`1970-01-01T${timeEnd}:00.000Z`) : null,
-          amount: typeof amount === "number" ? amount : null,
+          amount,
           unit: unit ?? 'ml',
           drinkType: drinkType ?? 'water',
           notes: notes ?? null,
@@ -126,14 +125,14 @@ class WaterIntakeController {
     try {
       const { date, page = "1", limit = "10" } = req.query;
       const pageNum = Number.parseInt(page, 10) || 1;
-      const limitNum = Math.max(1, Number.parseInt(limit, 10) || 10);
+      const limitNum = Math.min(500, Math.max(1, Number.parseInt(limit, 10) || 10));
       const skip = (pageNum - 1) * limitNum;
 
       const authUser = (req as unknown as AuthenticatedRequest).user;
       const where: Prisma.WaterIntakeLogWhereInput = {};
       where.userId = authUser?.id;
       if (date) {
-        const start = new Date(date as string);
+        const start = new Date(String(date).slice(0, 10));
         const end = new Date(start.getTime() + 86400000);
         where.date = { gte: start, lt: end };
       }
@@ -268,16 +267,15 @@ class WaterIntakeController {
       }
 
       const pageNum = Number.parseInt(page, 10) || 1;
-      const limitNum = Math.max(1, Number.parseInt(limit, 10) || 10);
+      const limitNum = Math.min(500, Math.max(1, Number.parseInt(limit, 10) || 10));
       const skip = (pageNum - 1) * limitNum;
 
       const where: Prisma.WaterIntakeLogWhereInput = { userId };
       if (date) {
-        const filterDate = new Date(date);
-        const start = new Date(filterDate);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(filterDate);
-        end.setHours(23, 59, 59, 999);
+        // `date` is a DATE column (UTC midnight); match getAllWaterIntakes rather
+        // than the server's local timezone.
+        const start = new Date(String(date).slice(0, 10));
+        const end = new Date(start.getTime() + 86400000);
         where.date = { gte: start, lt: end };
       }
 
@@ -377,7 +375,13 @@ class WaterIntakeController {
         updateData.timeEnd = timeEnd
           ? new Date(`1970-01-01T${timeEnd}:00.000Z`)
           : null;
-      if (amount !== undefined) updateData.amount = amount;
+      if (amount !== undefined) {
+        if (amount !== null && (typeof amount !== 'number' || amount <= 0)) {
+          res.status(400).json({ success: false, message: 'Amount must be a positive number' });
+          return;
+        }
+        updateData.amount = amount === null ? null : Math.round(amount);
+      }
       if (unit !== undefined) updateData.unit = unit;
       if (drinkType !== undefined) updateData.drinkType = drinkType;
       if (notes !== undefined) updateData.notes = notes;

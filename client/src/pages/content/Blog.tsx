@@ -189,9 +189,8 @@ export const Blog = () => {
             {/* About Box */}
             <div className="bg-white shadow rounded-lg p-4">
               <p className="text-sm text-gray-600 mb-4">
-                Lorem Ipsum is simply dummy text of the printing and typesetting industry.
-                Lorem Ipsum has been the industry's standard dummy text ever since the 1500s,
-                when an unknown printer took a galley of type.
+                The Lifeline blog shares practical tips on fitness, nutrition, sleep and
+                mindful living to help you build healthier habits.
               </p>
               <SocialLinks />
             </div>

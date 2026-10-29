@@ -102,8 +102,14 @@ const parseUserIdFromToken = (authorizationHeader?: string): string | null => {
   }
 };
 
-const toKg = (weight: number | null | undefined, unit: string | null | undefined): number | null => {
+// The app stores weight in kg and height in cm, with the unit field holding the user's
+// display choice ("154lbs", "5.8ft"). A unit that starts with a number is that display
+// form, so the stored value is already kg/cm. Bare units ("lbs") describe the value itself.
+const isDisplayForm = (unit: string | null | undefined) => /^\s*\d/.test(unit ?? '');
+
+export const toKg = (weight: number | null | undefined, unit: string | null | undefined): number | null => {
   if (!weight || weight <= 0) return null;
+  if (isDisplayForm(unit)) return weight;
 
   const normalizedUnit = normalizeText(unit);
   if (normalizedUnit === 'kg' || normalizedUnit === 'kgs' || normalizedUnit === '') return weight;
@@ -114,8 +120,9 @@ const toKg = (weight: number | null | undefined, unit: string | null | undefined
   return null;
 };
 
-const toMeters = (height: number | null | undefined, unit: string | null | undefined): number | null => {
+export const toMeters = (height: number | null | undefined, unit: string | null | undefined): number | null => {
   if (!height || height <= 0) return null;
+  if (isDisplayForm(unit)) return height / 100;
 
   const normalizedUnit = normalizeText(unit);
   if (normalizedUnit === 'cm' || normalizedUnit === '') return height / 100;

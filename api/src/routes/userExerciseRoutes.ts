@@ -10,34 +10,40 @@ import {
   getUsersByExerciseId,
   getUserExercisesByPurpose
 } from '../controllers/userExerciseController.js';
+import authenticate from '../middleware/authenticate.js';
+import authorize from '../middleware/authorize.js';
+import { bindBodyUserIdToCaller, requireRecordOwner, requireSelfOrAdmin } from '../middleware/ownership.js';
 
 const router = Router();
 
+// Every route acts on a user's own assignments; listings across users are admin-only.
+router.use(authenticate);
+
 // GET /api/user-exercises - Get all user exercise assignments
-router.get('/', getAllUserExercises);
+router.get('/', authorize(['admin']), getAllUserExercises);
 
 // GET /api/user-exercises/:id - Get user exercise assignment by ID
-router.get('/:id', getUserExerciseById);
+router.get('/:id', requireRecordOwner('userExercise'), getUserExerciseById);
 
 // GET /api/user-exercises/user/:userId - Get exercises for specific user
-router.get('/user/:userId', getUserExercisesByUserId);
+router.get('/user/:userId', requireSelfOrAdmin(), getUserExercisesByUserId);
 
 // GET /api/user-exercises/user/:userId/purpose/:purpose - Get user exercises by purpose
-router.get('/user/:userId/purpose/:purpose', getUserExercisesByPurpose);
+router.get('/user/:userId/purpose/:purpose', requireSelfOrAdmin(), getUserExercisesByPurpose);
 
 // GET /api/user-exercises/exercise/:exerciseId/users - Get users for specific exercise
-router.get('/exercise/:exerciseId/users', getUsersByExerciseId);
+router.get('/exercise/:exerciseId/users', authorize(['admin']), getUsersByExerciseId);
 
-// POST /api/user-exercises/assign - Assign exercise to user
-router.post('/assign', assignExerciseToUser);
+// POST /api/user-exercises/assign - Assign exercise to the caller
+router.post('/assign', bindBodyUserIdToCaller, assignExerciseToUser);
 
-// PUT /api/user-exercises/:id - Update user exercise assignment
-router.put('/:id', updateUserExercise);
+// PUT /api/user-exercises/:id - Update user exercise assignment (can move it between users)
+router.put('/:id', authorize(['admin']), updateUserExercise);
 
 // DELETE /api/user-exercises/:id - Remove user exercise assignment
-router.delete('/:id', removeUserExercise);
+router.delete('/:id', requireRecordOwner('userExercise'), removeUserExercise);
 
 // DELETE /api/user-exercises/user/:userId/exercise/:exerciseId - Remove specific user from exercise
-router.delete('/user/:userId/exercise/:exerciseId', removeUserFromExercise);
+router.delete('/user/:userId/exercise/:exerciseId', requireSelfOrAdmin(), removeUserFromExercise);
 
 export default router;

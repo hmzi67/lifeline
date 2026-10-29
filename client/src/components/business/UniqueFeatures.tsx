@@ -47,7 +47,7 @@ const UniqueFeatures: React.FC = () => {
               Work out at home for free.
             </h3>
             {/* Mobile Order: Image second, hidden on mobile in this position */}
-            <div className="lg:hidden translate-x-5">
+            <div className="lg:hidden pl-5">
               <img src={uniqueFeaturesImage} alt="" />
             </div>
             {/* Mobile Order: Paragraph third */}
@@ -107,7 +107,7 @@ const UniqueFeatures: React.FC = () => {
               Training that matches your pace.
             </h3>
             {/* Mobile Order: Image second, hidden on desktop in this position */}
-            <div className="lg:hidden translate-x-5">
+            <div className="lg:hidden pl-5">
               <img src={uniqueFeaturesImage3} alt="" />
             </div>
             {/* Mobile Order: Paragraph third */}

@@ -9,7 +9,7 @@ export const ReasonsSection: React.FC = () => {
                 {/* Section Header */}
                 <div className="text-center mb-10 md:mb-20">
                     <p className="text-primary font-medium text-sm tracking-wider uppercase mb-2 md:mb-4">
-                        OF THE PRINTING AND TYPE
+                        WHY LIFELINE
                     </p>
                     <h2 className="text-2xl font-bold text-gray-800 leading-tight md:text-4xl lg:text-6xl">
                         Reasons To <span className="text-primary">Run</span> With Us!

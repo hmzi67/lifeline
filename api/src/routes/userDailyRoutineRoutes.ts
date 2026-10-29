@@ -10,6 +10,9 @@ router.post('/', authenticate, UserDailyRoutineController.createUserDailyRoutine
 // Get all user daily routines with optional pagination and filtering
 router.get('/', authenticate, UserDailyRoutineController.getAllUserDailyRoutines);
 
+// Create-or-update the caller's routine for a given local day (must precede '/:id')
+router.put('/today', authenticate, UserDailyRoutineController.upsertTodayRoutine);
+
 // Get user daily routine by ID
 router.get('/:id', authenticate, UserDailyRoutineController.getUserDailyRoutineById);
 

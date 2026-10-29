@@ -22,6 +22,26 @@ const getUserIdFromToken = (req: Request): string | null => {
   }
 };
 
+const MAX_FAST_MINUTES = 7 * 24 * 60;
+// Clock skew allowed between the phone and the server.
+const CLOCK_SKEW_MS = 5 * 60 * 1000;
+
+const parseInstant = (value: unknown): Date | null => {
+  if (typeof value !== 'string') return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+/**
+ * Outcome of ending a fast at `endedAt`: how long it ran and whether it reached its target.
+ * A fast without a target counts as completed.
+ */
+export const endFast = (startedAt: Date, endedAt: Date, targetMinutes: number | null) => {
+  const durationMinutes = Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 60000));
+  const reachedTarget = !targetMinutes || durationMinutes >= targetMinutes;
+  return { durationMinutes, status: reachedTarget ? 'COMPLETED' : 'STOPPED' };
+};
+
 // Create a new fasting log
 export const createFastingLog = async (req: Request, res: Response) => {
   try {
@@ -33,7 +53,7 @@ export const createFastingLog = async (req: Request, res: Response) => {
       });
     }
 
-    const { date, timeStart, timeEnd, durationMinutes } = req.body;
+    const { date, timeStart, timeEnd, durationMinutes, startedAt, targetMinutes } = req.body;
 
     // Validate required fields
     if (!date || !timeStart || !timeEnd) {
@@ -59,6 +79,29 @@ export const createFastingLog = async (req: Request, res: Response) => {
       timeEnd: new Date(`1970-01-01T${timeEnd}Z`),
     };
     if (durationMinutes != null) data.durationMinutes = parseInt(String(durationMinutes), 10);
+
+    // Current app versions start a fast with a real timestamp and a target; older ones
+    // send only date/time fields and keep working as before.
+    if (startedAt != null) {
+      const start = parseInstant(startedAt);
+      if (!start || start.getTime() > Date.now() + CLOCK_SKEW_MS) {
+        return res.status(400).json({ success: false, message: 'startedAt must be a valid time, not in the future' });
+      }
+      const target = targetMinutes == null ? null : Number(targetMinutes);
+      if (target !== null && (!Number.isInteger(target) || target < 1 || target > MAX_FAST_MINUTES)) {
+        return res.status(400).json({ success: false, message: 'targetMinutes must be a whole number of minutes' });
+      }
+
+      const active = await prisma.fastingLog.findFirst({ where: { userId, status: 'ACTIVE' } });
+      if (active) {
+        return res.status(409).json({
+          success: false,
+          message: 'You already have a fast in progress',
+          data: { fastingLog: active },
+        });
+      }
+      Object.assign(data, { startedAt: start, targetMinutes: target, status: 'ACTIVE' });
+    }
 
     const fastingLog = await prisma.fastingLog.create({
       data,
@@ -160,6 +203,26 @@ export const getUserFastingLogs = async (req: Request, res: Response) => {
   }
 };
 
+// The user's fast in progress, whichever day it started on
+export const getActiveFastingLog = async (req: Request, res: Response) => {
+  try {
+    const userId = getUserIdFromToken(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const fastingLog = await prisma.fastingLog.findFirst({
+      where: { userId, status: 'ACTIVE' },
+      orderBy: { startedAt: 'desc' },
+    });
+
+    res.status(200).json({ success: true, data: { fastingLog } });
+  } catch (error) {
+    console.error('Get active fasting log error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch the active fast' });
+  }
+};
+
 // Get a single fasting log by ID
 export const getFastingLogById = async (req: Request, res: Response) => {
   try {
@@ -215,7 +278,7 @@ export const updateFastingLog = async (req: Request, res: Response) => {
     }
 
     const { id } = req.params;
-    const { date, timeStart, timeEnd, durationMinutes } = req.body;
+    const { date, timeStart, timeEnd, durationMinutes, endedAt } = req.body;
 
     // Check if the fasting log exists and belongs to the user
     const existingLog = await prisma.fastingLog.findFirst({
@@ -246,6 +309,21 @@ export const updateFastingLog = async (req: Request, res: Response) => {
     if (timeStart) data.timeStart = new Date(`1970-01-01T${timeStart}Z`);
     if (timeEnd) data.timeEnd = new Date(`1970-01-01T${timeEnd}Z`);
     if (durationMinutes != null) data.durationMinutes = parseInt(String(durationMinutes), 10);
+
+    // Ending a timestamped fast: the server works out the duration and outcome.
+    if (endedAt != null) {
+      if (!existingLog.startedAt) {
+        return res.status(400).json({ success: false, message: 'This fast has no start time' });
+      }
+      if (existingLog.status !== 'ACTIVE') {
+        return res.status(409).json({ success: false, message: 'This fast has already ended' });
+      }
+      const end = parseInstant(endedAt);
+      if (!end || end < existingLog.startedAt || end.getTime() > Date.now() + CLOCK_SKEW_MS) {
+        return res.status(400).json({ success: false, message: 'endedAt must be between the start time and now' });
+      }
+      Object.assign(data, { endedAt: end, ...endFast(existingLog.startedAt, end, existingLog.targetMinutes) });
+    }
 
     const fastingLog = await prisma.fastingLog.update({
       where: { id },

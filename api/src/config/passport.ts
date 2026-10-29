@@ -38,6 +38,10 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
         callbackURL: process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback',
+        // Bind each callback to the browser session that started the flow, so
+        // a callback URL from someone else's sign-in is rejected.
+        state: true,
+        pkce: true,
       },
       async (accessToken, refreshToken, profile, done) => {
         try {

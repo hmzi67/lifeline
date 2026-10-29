@@ -18,7 +18,8 @@ if (!config.stripePublishableKey) {
   );
 }
 
-const stripePromise = loadStripe(config.stripePublishableKey);
+// Stripe() throws on an empty key; without one, Elements renders nothing instead of crashing.
+const stripePromise = config.stripePublishableKey ? loadStripe(config.stripePublishableKey) : null;
 
 // Urgency countdown shown once a coupon is applied (15 minutes).
 const COUPON_COUNTDOWN_SECONDS = 15 * 60;
@@ -187,7 +188,7 @@ export default function Plan() {
             )}
 
             <p className="text-gray-700 font-semibold max-w-4xl text-center mt-12 text-sm sm:text-base">
-              Unlock our library of meditations, sleep sounds, and more. We'll send you reminder that your trails is ending soon. You'll be charged on March 28, cancel anytime before.
+              Unlock our library of meditations, sleep sounds, and more. We'll remind you before your trial ends, and you can cancel anytime before you're charged.
             </p>
           </>
         ) : !showStripeForm ? (
@@ -281,6 +282,7 @@ export default function Plan() {
             </div>
             <Elements stripe={stripePromise}>
               <StripePaymentForm
+                pricingPlanId={selectedPlan?.id ?? ''}
                 amount={checkoutAmount ?? (selectedPlan ? parseFloat(String(selectedPlan.price)) : 0)}
                 planTitle={selectedPlan?.name ?? ''}
                 couponCode={checkoutCouponCode}

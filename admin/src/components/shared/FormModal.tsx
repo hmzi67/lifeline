@@ -15,6 +15,7 @@ export interface FormField {
     min?: number; // For number inputs
     max?: number; // For number inputs
     disabled?: boolean;
+    hint?: string; // Help text shown under the input
 }
 
 export interface FormModalProps {
@@ -303,6 +304,9 @@ export const FormModal: React.FC<FormModalProps> = ({
                                     </div>
                                 )}
 
+                                {field.hint && (
+                                    <p className="text-xs text-gray-500 mt-1">{field.hint}</p>
+                                )}
                                 {errors[field.name] && (
                                     <p className="text-sm text-red-600 mt-1">{errors[field.name]}</p>
                                 )}

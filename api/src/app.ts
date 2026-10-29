@@ -2,7 +2,7 @@ import express from 'express';
 import 'express-async-errors';
 import session from 'express-session';
 import { healthCheck, prisma } from './config/database.js';
-import './config/index.js';
+import { config } from './config/index.js';
 import passport from './config/passport.js';
 import {
   compression,
@@ -20,7 +20,8 @@ import questionnaireRoutes from './routes/questionnaireRoutes.js';
 // @ts-ignore - The compiler couldn't find the bundled type declarations for this package on your server
 import { PrismaSessionStore } from '@quixo3/prisma-session-store';
 import { handleStripeWebhook } from './controllers/paymentController.js';
-import { getUploadRootPath } from './middleware/upload.js';
+import { serveUploads } from './middleware/upload.js';
+import hideInternalErrors from './middleware/hideInternalErrors.js';
 import appSetttingsRoutes from './routes/appSettingRoutes.js';
 import blogsRoutes from './routes/blogRoutes.js';
 import challengeExerciseRouter from './routes/challengeExerciseRoutes.js';
@@ -38,6 +39,8 @@ import exercisePlanWeekRoutes from './routes/exercisePlanWeekRoutes.js';
 import exerciseRoutes from './routes/exerciseRoutes.js';
 import fastingRoutes from './routes/fastingLogRoutes.js';
 import foodScanRoutes from './routes/foodScanRoutes.js';
+import foodLogRoutes from './routes/foodLogRoutes.js';
+import weightLogRoutes from './routes/weightLogRoutes.js';
 import inAppPurchaseRoutes from './routes/inAppPurchaseRoutes.js';
 import mealTypeRoutes from './routes/mealTypeRoutes.js';
 import medicationReminderRoutes from './routes/medicationReminderRoutes.js';
@@ -62,7 +65,10 @@ import userActiveExercisePlanRoutes from './routes/userActiveExercisePlanRoutes.
 import userDailyRoutes from './routes/userDailyRoutineRoutes.js';
 import userDietPlanRoutes from './routes/userDietPlanRoutes.js';
 import userExerciseRoutes from './routes/userExerciseRoutes.js';
+import userExerciseProgressRoutes from './routes/userExerciseProgressRoutes.js';
+import warmupRoutes from './routes/warmupRoutes.js';
 import userFavoriteMeditationRoutes from './routes/userFavoriteMeditationRoutes.js';
+import meditationLogRoutes from './routes/meditationLogRoutes.js';
 import adminDashboardRoutes from './routes/adminDashboardRoutes.js';
 import userRoute from './routes/userRoutes.js';
 import userWaterGoalRoutes from './routes/userWaterGoalRoutes.js';
@@ -77,18 +83,23 @@ app.use(cors);
 app.set('trust proxy', 1);
 // Security middlewares (should be first)
 app.use(helmet);
+app.use(hideInternalErrors);
 
 // Request processing middlewares
 app.use(compression);
 app.post('/api/payments/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
-app.use(express.json({ limit: '30mb' }));
-app.use(express.urlencoded({ extended: true, limit: '30mb' }));
-app.use('/uploads', express.static(getUploadRootPath()));
+// Only the routes that take base64 images in JSON get large bodies; the first
+// parser to run on a request wins, so these must come before the default.
+app.use('/api/food-scan', express.json({ limit: '30mb' }));
+app.use('/api/user', express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use('/uploads', ...serveUploads());
 
 // Session middleware for Passport
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'fallback-session-secret',
+    secret: config.sessionSecret,
     resave: false,
     saveUninitialized: false,
     store: new PrismaSessionStore(prisma, {
@@ -118,6 +129,8 @@ app.use(timeout(30000)); // 30-second timeout
 
 // Health check route (should be before authentication)
 app.get('/health', healthCheck);
+// Keep the deployment probe behind the same /api reverse-proxy path as clients.
+app.get('/api/health', healthCheck);
 
 // route for authentication
 app.use('/api/auth/', authRoute);
@@ -154,6 +167,8 @@ app.use('/api/iap', inAppPurchaseRoutes);
 
 // Food scanner route
 app.use('/api/food-scan', foodScanRoutes);
+app.use('/api/food-logs', foodLogRoutes);
+app.use('/api/weight-logs', weightLogRoutes);
 
 // diet plan routes
 app.use('/api/diet-plans', dietPlanRoutes);
@@ -204,6 +219,8 @@ app.use('/api/exercise-plans', exercisePlanRoutes);
 app.use('/api/exercise-plan-weeks', exercisePlanWeekRoutes);
 app.use('/api/exercise-plan-schedules', exercisePlanScheduleRoutes);
 app.use('/api/exercise-details', exerciseDetailRoutes);
+app.use('/api/user-exercise-progress', userExerciseProgressRoutes);
+app.use('/api/warmup', warmupRoutes);
 
 // Active plan routes
 app.use('/api/active-diet-plans', userActiveDietPlanRoutes);
@@ -212,6 +229,7 @@ app.use('/api/active-exercise-plans', userActiveExercisePlanRoutes);
 // Meditation session routes
 app.use('/api/meditation-sessions', meditationSessionRoutes);
 app.use('/api/favorite-meditations', userFavoriteMeditationRoutes);
+app.use('/api/meditation-logs', meditationLogRoutes);
 
 // Water goal routes
 app.use('/api/water-goals', userWaterGoalRoutes);

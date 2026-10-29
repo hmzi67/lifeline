@@ -6,18 +6,17 @@ interface BackendResponse<T> {
   message?: string;
 }
 
-export interface CreatePaymentIntentRequest {
-  amount: number;
-  currency?: string;
-  planId?: string;
-  planName?: string;
-  paymentMethodId?: string;
+export interface CreateSubscriptionRequest {
+  pricingPlanId: string;
   couponCode?: string;
 }
 
-export interface CreatePaymentIntentResponse {
+/** The server prices the plan (and coupon); a trial returns a SetupIntent instead of a PaymentIntent. */
+export interface CreateSubscriptionResponse {
+  intentType: "payment" | "setup";
   clientSecret: string;
   paymentIntentId: string;
+  subscriptionId: string;
 }
 
 export interface CreateSubscriptionPaymentRequest {
@@ -28,40 +27,29 @@ export interface CreateSubscriptionPaymentRequest {
   status?: "PENDING" | "COMPLETED" | "FAILED" | "CANCELLED";
 }
 
-export interface ConfirmPaymentRequest {
-  paymentIntentId: string;
-  paymentMethodId?: string;
-  userId?: string;
-}
-
-export interface ConfirmPaymentResponse {
-  subscriptionId?: string;
-  paymentIntentId?: string;
-}
-
 class PaymentService {
   /**
-   * Create a payment intent on the server
+   * Start checkout for a pricing plan; the server sets the amount
    */
-  async createPaymentIntent(
-    data: CreatePaymentIntentRequest
-  ): Promise<CreatePaymentIntentResponse> {
-    try {
-      const response = await api.post<BackendResponse<CreatePaymentIntentResponse>>(
-        "/payments/create-intent",
-        {
-          amount: data.amount,
-          currency: data.currency || "usd",
-          planId: data.planId,
-          planName: data.planName,
-          couponCode: data.couponCode,
-        }
-      );
-      return response.data.data;
-    } catch (error) {
-      console.error("Error creating payment intent:", error);
-      throw error;
-    }
+  async createSubscription(
+    data: CreateSubscriptionRequest
+  ): Promise<CreateSubscriptionResponse> {
+    const response = await api.post<BackendResponse<CreateSubscriptionResponse>>(
+      "/payments/subscriptions",
+      data
+    );
+    return response.data.data;
+  }
+
+  /**
+   * After Stripe confirms the card, ask the server to verify it and grant access
+   */
+  async confirmSubscription(subscriptionId: string) {
+    const response = await api.post<BackendResponse<{ subscriptionPaymentId: string; status: string }>>(
+      "/payments/subscriptions/confirm",
+      { subscriptionId }
+    );
+    return response.data.data;
   }
 
   /**
@@ -85,28 +73,6 @@ class PaymentService {
       return response.data;
     } catch (error) {
       console.error("Error creating subscription payment:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Confirm payment after successful payment method creation
-   */
-  async confirmPayment(
-    data: ConfirmPaymentRequest
-  ): Promise<ConfirmPaymentResponse> {
-    try {
-      const response = await api.post<BackendResponse<ConfirmPaymentResponse>>(
-        "/payments/confirm",
-        {
-          paymentIntentId: data.paymentIntentId,
-          paymentMethodId: data.paymentMethodId,
-          userId: data.userId,
-        }
-      );
-      return response.data.data;
-    } catch (error) {
-      console.error("Error confirming payment:", error);
       throw error;
     }
   }

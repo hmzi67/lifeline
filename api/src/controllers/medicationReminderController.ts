@@ -8,18 +8,13 @@ const prisma = new PrismaClient();
 export const getMedicationReminders = async (req: Request, res: Response): Promise<void> => {
   try {
     const { medicationId } = req.params;
+    const userId = (req as AuthenticatedRequest).user?.id;
 
+    // Only the caller's reminders on the caller's medication.
     const reminders = await prisma.medicationReminder.findMany({
-      where: { medicationId },
+      where: { medicationId, userId, medication: { userId } },
       include: {
-        medication: true,
-        user: {
-          select: {
-            id: true,
-            email: true,
-            username: true
-          }
-        }
+        medication: true
       }
     });
 
@@ -146,7 +141,8 @@ export const createMedicationReminder = async (req: Request, res: Response): Pro
       where: { id: medicationId }
     });
 
-    if (!medication) {
+    // Someone else's medication is reported as missing, not as forbidden.
+    if (!medication || medication.userId !== authUser?.id) {
       res.status(404).json({
         success: false,
         message: 'Medication not found'

@@ -12,10 +12,10 @@ import authorize from '../middleware/authorize.js';
 const router = Router();
 
 // GET /api/roles - Get all roles
-router.get('/', getAllRoles);
+router.get('/', authenticate, authorize(['admin']), getAllRoles);
 
 // GET /api/roles/:id - Get role by ID
-router.get('/:id', getRoleById);
+router.get('/:id', authenticate, authorize(['admin']), getRoleById);
 
 // POST /api/roles - Create new role
 router.post('/', authenticate, authorize(['admin']), createRole);

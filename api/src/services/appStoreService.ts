@@ -362,8 +362,10 @@ const applySnapshot = async (
 
   const now = new Date();
   const evaluation = evaluateSnapshot(snapshot, now);
+  // Archived plans still count: archiving only hides a plan from new buyers, and
+  // Apple keeps renewing existing subscribers, who must keep their access.
   const plan = productId
-    ? await prisma.pricingPlan.findFirst({ where: { appleProductId: productId, isActive: true } })
+    ? await prisma.pricingPlan.findFirst({ where: { appleProductId: productId } })
     : null;
 
   if (evaluation.active && !plan) {
@@ -544,6 +546,12 @@ export const getOrCreateAppAccountToken = async (userId: string): Promise<string
  * a restore) and updates the user's backend license. With no transactions the
  * stored subscription is refreshed from the App Store Server API when possible.
  */
+/** Verifies one StoreKit 2 signed transaction (JWS) against Apple's certificates. */
+export const verifySignedTransaction = async (signedTransaction: string): Promise<JWSTransactionDecodedPayload> => {
+  const { value } = await verifyWithFallback(verifier => verifier.verifyAndDecodeTransaction(signedTransaction));
+  return value;
+};
+
 export const syncAppStoreTransactions = async (
   userId: string,
   signedTransactions: string[],

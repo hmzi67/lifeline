@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { Request, Response } from 'express';
+import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 
 const prisma = new PrismaClient();
 
@@ -92,13 +93,30 @@ export const getUserWaterGoal = async (req: Request, res: Response): Promise<voi
 // Set or update user's water goal
 export const setUserWaterGoal = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { userId, goalAmount, unit } = req.body;
+    const { userId, goalAmount: rawGoalAmount, unit: rawUnit } = req.body;
 
-    if (!userId || !goalAmount || !unit) {
+    if (!userId || !rawGoalAmount || !rawUnit) {
       res.status(400).json({
         success: false,
         message: 'User ID, goal amount, and unit are required'
       });
+      return;
+    }
+
+    const authUser = (req as unknown as AuthenticatedRequest).user;
+    if (authUser?.id !== userId) {
+      res.status(403).json({ success: false, message: 'Forbidden: You can only set your own water goal' });
+      return;
+    }
+
+    // Goals are stored as whole ml (column is Int) so they compare directly with
+    // intake logs. Litre input ("L", "Lt", "litres") is converted.
+    const parsedAmount = Number(rawGoalAmount);
+    const isLitres = /^l(t|itre|iter)?s?$/i.test(String(rawUnit).trim());
+    const goalAmount = Math.round(isLitres ? parsedAmount * 1000 : parsedAmount);
+    const unit = 'ml';
+    if (!Number.isFinite(goalAmount) || goalAmount <= 0) {
+      res.status(400).json({ success: false, message: 'Goal amount must be a positive number' });
       return;
     }
 

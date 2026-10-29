@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
-import { findActiveLicense } from '../services/subscriptionAccessService.js';
+import { findActiveLicense, findFreeWeek } from '../services/subscriptionAccessService.js';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 
 const requireActiveLicense = async (req: Request, res: Response, next: NextFunction) => {
@@ -20,8 +20,9 @@ const requireActiveLicense = async (req: Request, res: Response, next: NextFunct
   }
 
   try {
-    const activeLicense = await findActiveLicense(userId);
-    if (!activeLicense) {
+    // VIP, or the account's free week (timed by the server clock) is still running.
+    const hasAccess = Boolean(await findActiveLicense(userId)) || (await findFreeWeek(user.email)).active;
+    if (!hasAccess) {
       return res.status(403).json({
         success: false,
         message: 'An active Lifeline VIP subscription is required',

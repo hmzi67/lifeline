@@ -47,7 +47,9 @@ export const CircularProgress: React.FC<{
     percentage: number;
     size?: number;
     showAnimation?: boolean
-}> = ({ percentage, size = 120, showAnimation = true }) => {
+    /** Caption under the value; the stat card already names it, so it is optional. */
+    label?: string
+}> = ({ percentage, size = 120, showAnimation = true, label }) => {
     const radius = (size - 10) / 2;
     const circumference = 2 * Math.PI * radius;
     const strokeDasharray = circumference;
@@ -91,11 +93,15 @@ export const CircularProgress: React.FC<{
                     style={{ filter: 'drop-shadow(0 0 8px rgba(62, 198, 201, 0.3))' }}
                 />
             </svg>
+            {/* Text scales with the ring so it fits inside the 12px stroke at any size. */}
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-3xl font-bold bg-gradient-to-r from-teal-600 to-cyan-600 bg-clip-text text-transparent">
+                <span
+                    className="font-bold leading-none bg-gradient-to-r from-teal-600 to-cyan-600 bg-clip-text text-transparent"
+                    style={{ fontSize: Math.round(size * 0.2) }}
+                >
                     {percentage}%
                 </span>
-                <span className="text-xs text-gray-500">Growth</span>
+                {label && <span className="text-xs text-gray-500 mt-1">{label}</span>}
             </div>
         </div>
     );

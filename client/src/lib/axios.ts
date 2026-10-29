@@ -8,13 +8,13 @@ const api = axios.create({
 });
 
 // Public routes that don't require authentication
+// 401s from these endpoints are not an expired session, so they skip the refresh retry.
 const PUBLIC_ROUTES = [
-  '/blogs',
-  '/blog-categories',
-  '/health',
   // Login failures return 401 by design — never treat them as an expired
   // session, or a wrong password would trigger a refresh and a hard redirect.
   '/auth/login',
+  // A rejected sign-in code is not an expired session either.
+  '/auth/oauth/exchange',
 ];
 
 // Helper function to check if route is public
@@ -25,12 +25,11 @@ const isPublicRoute = (url: string): boolean => {
 // Request interceptor: Add access token from localStorage
 api.interceptors.request.use(
   (config) => {
-    // Only add token if it's not a public route
-    if (!isPublicRoute(config.url || '')) {
-      const token = localStorage.getItem("token");
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
+    // Always send the token when we have one: public GETs ignore it, but
+    // authenticated writes under a public prefix (e.g. POST /blogs/:id/comments) need it.
+    const token = localStorage.getItem("token");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },

@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
@@ -13,6 +14,7 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('7d'),
   JWT_REFRESH_SECRET: z.string().min(32),
   JWT_REFRESH_EXPIRES_IN: z.string().default('30d'),
+  SESSION_SECRET: z.string().min(32).optional(),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   EMAIL_HOST: z.string().optional(),
   EMAIL_PORT: z.string().transform(Number).optional(),
@@ -29,6 +31,12 @@ const envSchema = z.object({
 // Validate environment variables
 const env = envSchema.parse(process.env);
 
+// Signs the express-session cookie (Google OAuth state and PKCE verifier).
+// Without SESSION_SECRET, derive a distinct key from the validated JWT secret
+// rather than falling back to a value anyone can read in the source.
+const sessionSecret =
+  env.SESSION_SECRET ?? createHmac('sha256', env.JWT_SECRET).update('lifeline-express-session').digest('hex');
+
 export const config = {
   port: env.PORT,
   host: env.HOST,
@@ -39,6 +47,7 @@ export const config = {
     refreshSecret: env.JWT_REFRESH_SECRET,
     refreshExpiresIn: env.JWT_REFRESH_EXPIRES_IN,
   },
+  sessionSecret,
   corsOrigin: env.CORS_ORIGIN,
   smtp: {
     host: env.EMAIL_HOST,

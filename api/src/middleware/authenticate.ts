@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 import { config } from '../config/index.js';
+import { accountAccessDenial } from '../utils/accountAccess.js';
 
 const prisma = new PrismaClient();
 
@@ -47,6 +48,7 @@ const authenticate = async (req: Request, res: Response, next: NextFunction) => 
         email: true,
         role: true,
         isEmailVerified: true,
+        status: true,
       },
     });
 
@@ -56,6 +58,11 @@ const authenticate = async (req: Request, res: Response, next: NextFunction) => 
         message: 'User not found',
         code: 'USER_NOT_FOUND',
       });
+    }
+
+    const denial = accountAccessDenial(user);
+    if (denial) {
+      return res.status(403).json({ success: false, ...denial });
     }
 
     // Attach user information to request object

@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
-import { findActiveLicense } from '../services/subscriptionAccessService.js';
+import { findActiveLicense, findFreeWeek } from '../services/subscriptionAccessService.js';
 
 const prisma = new PrismaClient();
 
@@ -130,9 +130,11 @@ export const updateOnboardingProgress = async (
   const patch = parsed.data;
 
   if (patch.isComplete === true) {
-    const activeLicense = await findActiveLicense(userId);
+    // Paid, or chose "Continue for free" (the free week then decides whether the app is usable).
+    const user = (req as AuthenticatedRequest).user!;
+    const [activeLicense, freeWeek] = await Promise.all([findActiveLicense(userId), findFreeWeek(user.email)]);
 
-    if (!activeLicense) {
+    if (!activeLicense && !freeWeek.startedAt) {
       return res.status(409).json({
         success: false,
         message: 'A confirmed subscription is required to finish onboarding',

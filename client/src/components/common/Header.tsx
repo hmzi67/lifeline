@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import {X, User, LogOut, Settings} from 'lucide-react';
+import {X, User, LogOut} from 'lucide-react';
 import menu from "../../assets/images/comming-soon/menu.png";
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -231,25 +231,15 @@ export default function Header() {
                               Profile
                             </Link>
                           </DropdownMenuItem>
-                          <DropdownMenuSeparator />
+                          {/* Same items as the desktop menu. */}
                           <DropdownMenuItem asChild>
                             <Link
-                                to="/dashboard"
+                                to="/questions?restart=true"
                                 className="flex items-center cursor-pointer w-full px-2 py-2"
                                 onClick={() => setIsMenuOpen(false)}
                             >
                               <User className="w-4 h-4 mr-2" />
-                              Dashboard
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem asChild>
-                            <Link
-                                to="/goals"
-                                className="flex items-center cursor-pointer w-full px-2 py-2"
-                                onClick={() => setIsMenuOpen(false)}
-                            >
-                              <Settings className="w-4 h-4 mr-2" />
-                              Goals
+                              Update Information
                             </Link>
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />

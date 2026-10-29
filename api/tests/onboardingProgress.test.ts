@@ -8,6 +8,9 @@ const mockPrisma = {
   userLicense: {
     findFirst: jest.fn(),
   },
+  freeWeekClaim: {
+    findUnique: jest.fn(),
+  },
 };
 
 jest.mock('@prisma/client', () => ({
@@ -50,6 +53,7 @@ describe('backend onboarding progress', () => {
     mockPrisma.onboardingProgress.upsert.mockReset();
     mockPrisma.userLicense.findFirst.mockReset();
     mockPrisma.userLicense.findFirst.mockResolvedValue({ id: 'license-one' });
+    mockPrisma.freeWeekClaim.findUnique.mockReset().mockResolvedValue(null);
   });
 
   it('returns a default state without creating local or database state', async () => {
@@ -164,6 +168,21 @@ describe('backend onboarding progress', () => {
 
     expect(response.statusCode).toBe(409);
     expect(mockPrisma.onboardingProgress.upsert).not.toHaveBeenCalled();
+  });
+
+  it('allows completion once the user chose "Continue for free"', async () => {
+    mockPrisma.userLicense.findFirst.mockResolvedValue(null);
+    mockPrisma.freeWeekClaim.findUnique.mockResolvedValue({ startedAt: new Date() });
+    mockPrisma.onboardingProgress.upsert.mockImplementation(async ({ create }: any) => ({ ...create, lastRoute: null }));
+    const response = createResponse();
+
+    await updateOnboardingProgress(
+      authenticatedRequest({ isComplete: true }) as any,
+      response as any,
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(mockPrisma.onboardingProgress.upsert).toHaveBeenCalled();
   });
 
   it('rejects arbitrary routes before writing to the database', async () => {

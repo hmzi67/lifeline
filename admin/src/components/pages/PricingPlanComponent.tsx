@@ -259,6 +259,7 @@ const PricingPlanComponent: React.FC = () => {
             type: 'number',
             required: true,
             placeholder: '9.99',
+            hint: 'Charged once by card (Android and web) for the whole duration; at least $0.50. iPhone buyers pay the App Store price set in App Store Connect.',
         },
         {
             name: 'originalPrice',
@@ -266,6 +267,7 @@ const PricingPlanComponent: React.FC = () => {
             type: 'number',
             required: false,
             placeholder: '19.99',
+            hint: 'Shown struck through next to the price, so it must be higher.',
         },
         {
             name: 'durationMonths',
@@ -273,6 +275,7 @@ const PricingPlanComponent: React.FC = () => {
             type: 'number',
             required: true,
             placeholder: '1',
+            hint: 'Access length for a card purchase. For iPhone, match the App Store product’s period.',
         },
         {
             name: 'trialDays',
@@ -280,6 +283,7 @@ const PricingPlanComponent: React.FC = () => {
             type: 'number',
             required: false,
             placeholder: '0',
+            hint: 'Card payments only: the card is saved and charged when the trial ends. iPhone trials are set as an introductory offer in App Store Connect.',
         },
         {
             name: 'appleProductId',
@@ -287,6 +291,7 @@ const PricingPlanComponent: React.FC = () => {
             type: 'text',
             required: false,
             placeholder: 'com.irtaza.lifeline.vip.monthly',
+            hint: 'Must match an auto-renewable subscription in App Store Connect exactly. Plans without it are hidden on iPhone. It cannot change once App Store subscribers exist.',
         },
         {
             name: 'features',

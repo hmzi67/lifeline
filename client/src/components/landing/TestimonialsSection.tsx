@@ -9,34 +9,34 @@ import 'swiper/swiper-bundle.css';
 
 interface Testimonial {
     name: string;
-    avatar: string;
     rating: number;
     text: string;
 }
+
+// Initials instead of photos: these are not real customer pictures, and a
+// random-image service showed a different face on every visit.
+const initials = (name: string) =>
+    name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join('');
 
 export const TestimonialsSection: React.FC = () => {
     const testimonials: Testimonial[] = [
         {
             name: "Lina Williams",
-            avatar: "/sample.png",
             rating: 5,
             text: "I didn’t realize how little I moved until I started using this band. Now I actually look forward to checking my steps.",
         },
         {
             name: "Maria Lopez",
-            avatar: "https://picsum.photos/60/60?random=1",
             rating: 4,
             text: "I check my heart rate during workouts with the band. It keeps me from overdoing it, which I really appreciate",
         },
         {
             name: "Daniel Reyes",
-            avatar: "https://picsum.photos/60/60?random=2",
             rating: 5,
             text: "The sleep tracker is surprisingly accurate! I woke up and saw exactly why I felt tired. Super helpful.",
         },
         {
             name: "James Carter",
-            avatar: "https://picsum.photos/60/60?random=3",
             rating: 4,
             text: "It’s become part of my routine. Steps, sleep, heart rate—all in one place without me having to worry about it.",
         },
@@ -72,11 +72,12 @@ export const TestimonialsSection: React.FC = () => {
                         <SwiperSlide key={index}>
                             <div className="bg-white rounded-2xl p-4 sm:p-6 border shadow-sm hover:shadow-xl transition-shadow duration-300 h-full flex flex-col">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 mb-4">
-                                    <img
-                                        src={testimonial.avatar}
-                                        alt={testimonial.name}
-                                        className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover"
-                                    />
+                                    <div
+                                        aria-hidden="true"
+                                        className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 text-white flex items-center justify-center text-xl sm:text-2xl font-semibold"
+                                    >
+                                        {initials(testimonial.name)}
+                                    </div>
                                     <h4 className="font-semibold text-gray-900 text-lg sm:text-xl">{testimonial.name}</h4>
                                 </div>
                                 <div className="flex w-full justify-center sm:justify-start items-center gap-1 mb-4">

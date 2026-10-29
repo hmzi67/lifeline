@@ -1,7 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { createLogger, format, transports } from 'winston';
+import { isDevelopment } from '../config/logging.js';
 
 const logger = createLogger({
+    // Production records server failures only.
+    level: isDevelopment ? 'info' : 'error',
     format: format.combine(
         format.timestamp(),
         format.errors({ stack: true }),
@@ -24,6 +27,21 @@ const requestLogger = (req: Request, res: Response, next: NextFunction) => {
 
     res.on('finish', () => {
         const duration = Date.now() - start;
+
+        if (!isDevelopment) {
+            // No query string (it can carry tokens), IP or user agent in production logs.
+            if (res.statusCode >= 500) {
+                logger.error('Request failed', {
+                    method: req.method,
+                    path: req.path,
+                    statusCode: res.statusCode,
+                    duration: `${duration}ms`,
+                    requestId: (req as any).id
+                });
+            }
+            return;
+        }
+
         const logData = {
             method: req.method,
             url: req.url,

@@ -10,6 +10,9 @@ build/
 
 # Environment variables
 .env
+# Firebase service account (FIREBASE_SERVICE_ACCOUNT_PATH); never commit it
+*firebase-adminsdk*.json
+firebase-service-account*.json
 .env.local
 .env.development.local
 .env.test.local

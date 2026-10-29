@@ -25,8 +25,15 @@ export const useUserStore = create<UserStore>((set, get) => ({
 
     set({ loading: true, error: null });
     try {
-      const response = await userService.getAllUsers();
-      set({ users: response.data.users, loading: false });
+      // The API pages its results (10 by default); the table filters and pages
+      // client-side, so load every page or it only ever shows the newest few.
+      const users = [];
+      for (let page = 1; ; page++) {
+        const response = await userService.getAllUsers({ page, limit: 100 });
+        users.push(...response.data.users);
+        if (!response.data.pagination.hasNextPage) break;
+      }
+      set({ users, loading: false });
     } catch (err: any) {
       set({ error: err.message, loading: false });
     }
