@@ -1,13 +1,33 @@
-import React, { useState } from 'react';
+import React, { Suspense, lazy, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { Sidebar, Header } from '@/components/layout';
-import { LoginPage, UsersComponent, DietComponent, ExerciseComponent, BlogComponent, MeditationComponent, RoleComponent, BlogCategoryComponent, MealTypeComponent, ChallengeComponent, SleepStoriesComponent, SleepSoundsComponent } from '@/components/pages';
+import LoginPage from '@/components/pages/LoginPage';
 import { navigationItems } from '@/components/constants';
-import { DashboardComponent } from '@/components/dashboard';
 import { useAuthStore } from '@/store/useAuthStore';
-import CouponComponent from './components/pages/CouponComponent';
-import ReferralComponent from './components/pages/ReferralComponent';
-import PricingPlanComponent from './components/pages/PricingPlanComponent';
+
+// Each section is its own chunk, so the login screen doesn't download the whole panel.
+const DashboardComponent = lazy(() => import('@/components/dashboard').then((m) => ({ default: m.DashboardComponent })));
+const UsersComponent = lazy(() => import('@/components/pages/UsersComponent'));
+const RoleComponent = lazy(() => import('@/components/pages/RoleComponent'));
+const DietComponent = lazy(() => import('@/components/pages/DietComponent'));
+const MealTypeComponent = lazy(() => import('@/components/pages/MealTypeComponent'));
+const ExerciseComponent = lazy(() => import('@/components/pages/ExerciseComponent'));
+const ChallengeComponent = lazy(() => import('@/components/pages/ChallengeComponent'));
+const MeditationComponent = lazy(() => import('@/components/pages/MeditationComponent'));
+const SleepStoriesComponent = lazy(() => import('@/components/pages/SleepStoriesComponent'));
+const SleepSoundsComponent = lazy(() => import('@/components/pages/SleepSoundsComponent'));
+const BlogCategoryComponent = lazy(() => import('@/components/pages/BlogCategoryComponent'));
+const BlogComponent = lazy(() => import('@/components/pages/BlogComponent'));
+const PricingPlanComponent = lazy(() => import('@/components/pages/PricingPlanComponent'));
+const CouponComponent = lazy(() => import('@/components/pages/CouponComponent'));
+const ReferralComponent = lazy(() => import('@/components/pages/ReferralComponent'));
+
+const SectionFallback = () => (
+    <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-cyan-500" />
+    </div>
+);
 
 // ── Protected layout ──────────────────────────────────────────────────────────
 // Below Tailwind's `lg` breakpoint the open sidebar would cover most of the page.
@@ -71,7 +91,7 @@ const AdminLayout: React.FC = () => {
             <main className="flex-1 min-w-0 overflow-x-hidden">
                 <div className="p-4 sm:p-8">
                     <Header activeNav={activeNav} />
-                    {renderContent()}
+                    <Suspense fallback={<SectionFallback />}>{renderContent()}</Suspense>
                 </div>
             </main>
         </div>

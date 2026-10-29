@@ -1,5 +1,5 @@
 import React from 'react';
-import heroImg2 from '../../assets/images/affiliatehero/business hero.jpeg'
+import heroImg2 from '../../assets/images/affiliatehero/business hero.webp'
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 

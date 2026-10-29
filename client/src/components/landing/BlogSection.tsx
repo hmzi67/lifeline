@@ -113,7 +113,7 @@ export const BlogSection: React.FC = () => {
                       <div className="bg-white rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-lg">
                         <div className="relative overflow-hidden">
                           <img
-                            src={blog.coverImage || "/sample.png"}
+                            src={blog.coverImage || "/sample.webp"}
                             alt={blog.title}
                             className="w-full h-48 xl:h-56 object-cover rounded-2xl group-hover:scale-105 transition-transform duration-300"
                           />
@@ -160,7 +160,7 @@ export const BlogSection: React.FC = () => {
                         <div className="flex-shrink-0">
                           <div className="relative overflow-hidden rounded-xl mt-6">
                             <img
-                              src={blog.coverImage || "/sample.png"}
+                              src={blog.coverImage || "/sample.webp"}
                               alt={blog.title}
                               className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 object-cover group-hover:scale-105 transition-transform duration-300"
                             />

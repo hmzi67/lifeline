@@ -124,7 +124,7 @@ export default function Plan() {
       {/* Header */}
       <div className="container mx-auto py-4 px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between">
-          <img src="/logo.svg" className="w-16 h-16 sm:w-20 sm:h-20" />
+          <img src="/logo.webp" alt="Lifeline" width={110} height={70} className="w-16 h-16 sm:w-20 sm:h-20 object-contain" />
           {couponSecondsLeft !== null && (
             <p className="hidden md:flex items-center justify-center gap-2 font-semibold text-primary-600">
               <Tag />

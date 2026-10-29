@@ -4,23 +4,23 @@ export const RecentPosts = () => {
     const recentPosts = [
         {
             title: "The 15 Secrets That You Should Know About Running Club",
-            imageUrl: "/sample.png"
+            imageUrl: "/sample.webp"
         },
         {
             title: "The 15 Secrets That You Should Know About Running Club",
-            imageUrl: "/sample.png"
+            imageUrl: "/sample.webp"
         },
         {
             title: "The 15 Secrets That You Should Know About Running Club",
-            imageUrl: "/sample.png"
+            imageUrl: "/sample.webp"
         },
         {
             title: "The 15 Secrets That You Should Know About Running Club",
-            imageUrl: "/sample.png"
+            imageUrl: "/sample.webp"
         },
         {
             title: "The 15 Secrets That You Should Know About Running Club",
-            imageUrl: "/sample.png"
+            imageUrl: "/sample.webp"
         }
     ];
 

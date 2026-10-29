@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Clock, Star, ThumbsUp, ThumbsDown, Share2 } from 'lucide-react';
-import Phone from "../../assets/images/fitness/phone.svg";
-import Band from "../../assets/images/fitness/band.svg";
+import Phone from "../../assets/images/fitness/phone.webp";
+import Band from "../../assets/images/fitness/band.webp";
 import Band1 from "../../assets/images/fitness/band-1.webp";
 import Band2 from "../../assets/images/fitness/band-2.webp";
 import Band3 from "../../assets/images/fitness/band-3.webp";

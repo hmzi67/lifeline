@@ -3,6 +3,9 @@ import { Button } from '../ui/button';
 import hero1 from "@/assets/images/landing/hero-1.webp";
 import hero2 from "@/assets/images/landing/hero-2.webp";
 import hero3 from "@/assets/images/landing/hero-3.webp";
+import hero1Small from "@/assets/images/landing/hero-1-960.webp";
+import hero2Small from "@/assets/images/landing/hero-2-960.webp";
+import hero3Small from "@/assets/images/landing/hero-3-960.webp";
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -10,7 +13,11 @@ export const HeroSection: React.FC = () => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   // Memoize image array to prevent recreation on every render
-  const images = React.useMemo(() => [hero1, hero2, hero3], []);
+  const images = React.useMemo(() => [
+    { large: hero1, small: hero1Small },
+    { large: hero2, small: hero2Small },
+    { large: hero3, small: hero3Small },
+  ], []);
 
   // Use useCallback to prevent recreation of an interval function
   const nextImage = useCallback(() => {
@@ -30,12 +37,17 @@ export const HeroSection: React.FC = () => {
       {/* Background Images Container */}
       <div className="absolute inset-0 w-full h-full">
         <div className="w-full h-full aspect-[1/1] lg:aspect-[16/9] relative">
-          {/* Single background image with smooth transition */}
-          <div
-            className="absolute inset-0 w-full h-full bg-cover bg-center bg-no-repeat transition-all duration-1000 ease-in-out"
-            style={{
-              backgroundImage: `url(${images[currentImageIndex]})`
-            }}
+          {/* A real <img> (not a CSS background) so the browser finds and prioritises the LCP image early */}
+          <img
+            src={images[currentImageIndex].large}
+            srcSet={`${images[currentImageIndex].small} 960w, ${images[currentImageIndex].large} 1920w`}
+            sizes="100vw"
+            alt=""
+            width={1920}
+            height={1240}
+            fetchPriority={currentImageIndex === 0 ? 'high' : 'auto'}
+            decoding="async"
+            className="absolute inset-0 w-full h-full object-cover object-center transition-all duration-1000 ease-in-out"
           />
 
           {/* Overlay */}

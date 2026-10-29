@@ -125,7 +125,7 @@ export const Blog = () => {
                       key={post.id}
                       title={post.title}
                       excerpt={post.excerpt}
-                      imageUrl={post.coverImage || '/sample.png'}
+                      imageUrl={post.coverImage || '/sample.webp'}
                       readMoreLink={`/blog/${post.slug}`}
                     />
                   )))}
@@ -137,7 +137,7 @@ export const Blog = () => {
                   <BlogCard
                     title={posts[2].title}
                     excerpt={posts[2].excerpt}
-                    imageUrl={posts[2].coverImage || '/sample.png'}
+                    imageUrl={posts[2].coverImage || '/sample.webp'}
                     readMoreLink={`/blog/${posts[2].slug}`}
                     size="featured"
                   />
@@ -153,7 +153,7 @@ export const Blog = () => {
                     key={post.id}
                     title={post.title}
                     excerpt={post.excerpt}
-                    imageUrl={post.coverImage || '/sample.png'}
+                    imageUrl={post.coverImage || '/sample.webp'}
                     readMoreLink={`/blog/${post.slug}`}
                   />
                 )))}
@@ -178,7 +178,7 @@ export const Blog = () => {
                 <div key={post.id} className="flex items-center gap-3 border-b pb-2">
                   <p className="text-sm font-medium text-gray-800">{post.title}</p>
                   <img
-                    src={post.coverImage || '/sample.png'}
+                    src={post.coverImage || '/sample.webp'}
                     alt={post.title}
                     className="w-16 h-16 object-cover rounded"
                   />

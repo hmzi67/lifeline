@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
-import womenimg from "@/assets/images/question/womengroup2.svg";
-import menimg from "@/assets/images/question/mengroup.svg";
+import womenimg from "@/assets/images/question/womengroup2.webp";
+import menimg from "@/assets/images/question/mengroup.webp";
 
 interface LifeLineFitnessProps {
     gender: string;

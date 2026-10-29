@@ -83,7 +83,7 @@ export default function Header() {
           <div className="flex items-center justify-between">
             {/* Logo */}
             <Link to="/" className="flex items-center space-x-3">
-              <img src={"/logo.svg"} alt="Lifeline Logo" className="w-16 h-16 sm:w-20 sm:h-20" />
+              <img src="/logo.webp" alt="Lifeline Logo" width={110} height={70} className="w-16 h-16 sm:w-20 sm:h-20 object-contain" />
             </Link>
 
             {/* Desktop Navigation */}
@@ -175,7 +175,7 @@ export default function Header() {
               {/* Header */}
               <div className="flex justify-between items-center p-4 border-b border-gray-100">
                 <Link to="/" className="flex items-center space-x-3" onClick={() => setIsMenuOpen(false)}>
-                  <img src={"/logo.svg"} alt="Lifeline Logo" className="w-12 h-12" />
+                  <img src="/logo.webp" alt="Lifeline Logo" width={110} height={70} className="w-12 h-12 object-contain" />
                 </Link>
                 <button
                     className="text-gray-600 p-2 hover:bg-gray-100 rounded-full transition-colors duration-200"

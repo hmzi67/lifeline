@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Check } from 'lucide-react';
-import menimg from "@/assets/images/question/man-gender.jpg";
+import menimg from "@/assets/images/question/man-gender.webp";
 import womenimg from "@/assets/images/question/women-gender.jpeg";
 import api from '@/lib/axios'; 
 

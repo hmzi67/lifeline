@@ -2,7 +2,7 @@
 import AppBgImage2 from '../../assets/images/landing/appbgimg12.png';
 import AppDownloadBg from '@/assets/images/landing/AppDownloadBg.jpeg'
 import mobileimg from '../../assets/images/landing/appDownloadImg.webp';
-import AppDownloadBgMobile from '@/assets/images/landing/AppDonwloadBgMobile.png';
+import AppDownloadBgMobile from '@/assets/images/landing/AppDonwloadBgMobile.webp';
 
 export const AppDownload = ({ isLandingPage = false }) => {
     return (

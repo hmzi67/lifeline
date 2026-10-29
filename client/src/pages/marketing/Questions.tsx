@@ -18,7 +18,7 @@ import GoalWeightSelector from "@/components/questions/GoalWeightSelector.tsx";
 import api from "@/lib/axios";
 import Loading from "@/components/common/Loading";
 import GoBack from "@/components/common/GoBack";
-import DietImage from "@/assets/Q-thankyou/Diet Applause.png";
+import DietImage from "@/assets/Q-thankyou/Diet Applause.webp";
 import ExerciseMenVideo from "@/assets/Q-thankyou/men-exercise.mp4"
 import ExerciseWomenVideo from "@/assets/Q-thankyou/women-exercise.mp4"
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -255,7 +255,10 @@ export default function Questions() {
         {/* Header */}
         <div className="absolute top-0 w-full flex items-center justify-center py-3">
           <img
-            src="/logo.svg"
+            src="/logo.webp"
+            alt="Lifeline"
+            width={110}
+            height={70}
             className="w-20"
           />
 
