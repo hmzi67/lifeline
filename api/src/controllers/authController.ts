@@ -1465,7 +1465,7 @@ const storeAppleRefreshToken = async (userId: string, code: string, audience: st
 
 export const appleMobileAuth = async (req: Request, res: Response) => {
   try {
-    const { identityToken, firstName, authorizationCode } = req.body;
+    const { identityToken, firstName, authorizationCode, nonce } = req.body;
 
     if (!identityToken) {
       return res.status(400).json({
@@ -1499,6 +1499,20 @@ export const appleMobileAuth = async (req: Request, res: Response) => {
         success: false,
         message: 'Invalid or expired Apple identity token',
       });
+    }
+
+    // A token requested with a nonce carries its SHA-256; only the app that asked knows the raw
+    // value, so a replayed token is refused. Tokens from older app builds carry no nonce.
+    if (payload.nonce !== undefined) {
+      const expected = typeof nonce === 'string' && nonce
+        ? createHash('sha256').update(nonce).digest('hex')
+        : '';
+      if (typeof payload.nonce !== 'string' || !expected || !safeEqual(payload.nonce, expected)) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid or expired Apple identity token',
+        });
+      }
     }
 
     let user;
