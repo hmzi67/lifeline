@@ -15,6 +15,7 @@ import {
   AppleIdentityProviderError,
   verifyAppleIdentityToken,
 } from '../services/appleIdentityService.js';
+import { encryptAppleToken, exchangeAppleAuthorizationCode } from '../services/appleTokenService.js';
 
 
 // JWT Payload interfaces
@@ -475,6 +476,8 @@ export const login = async (req: Request, res: Response) => {
       otpPurpose: ___,
       otpExpiresAt: ____,
       otpAttempts: _____,
+      appleRefreshToken: ______,
+      appleClientId: _______,
       ...userWithoutSensitiveData
     } = user;
 
@@ -708,7 +711,7 @@ export const getCurrentUser = async (req: Request, res: Response) => {
     }
 
     // Remove sensitive data
-    const { password, otp, otpPurpose, otpExpiresAt, otpAttempts, ...userWithoutSensitiveData } = user;
+    const { password, otp, otpPurpose, otpExpiresAt, otpAttempts, appleRefreshToken, appleClientId, ...userWithoutSensitiveData } = user;
 
     res.status(200).json({
       success: true,
@@ -1388,7 +1391,7 @@ export const appleAuthCallback = async (req: Request, res: Response) => {
   const stored = readCookie(req, APPLE_WEB_STATE_COOKIE);
   res.clearCookie(APPLE_WEB_STATE_COOKIE, APPLE_WEB_STATE_COOKIE_OPTIONS);
 
-  const { state, id_token: identityToken, user: userJson, error } = req.body ?? {};
+  const { state, id_token: identityToken, user: userJson, error, code: appleCode } = req.body ?? {};
 
   if (error) {
     return redirectToAppleResult(res, {
@@ -1424,6 +1427,9 @@ export const appleAuthCallback = async (req: Request, res: Response) => {
     }
 
     const user = await findOrCreateAppleUser(payload.sub, payload.email, firstName);
+    if (typeof appleCode === 'string' && appleCode) {
+      await storeAppleRefreshToken(user.id, appleCode, payload.aud);
+    }
     // Tokens are only issued when the client exchanges this code
     const code = await issueOAuthLoginCode(res, user.id);
 
@@ -1442,9 +1448,24 @@ export const appleAuthCallback = async (req: Request, res: Response) => {
 };
 
 // Apple Mobile Authentication - For mobile apps using identity tokens
+const storeAppleRefreshToken = async (userId: string, code: string, audience: string | string[] | undefined) => {
+  const clientId = Array.isArray(audience) ? audience[0] : audience;
+  if (!clientId) return;
+  try {
+    const appleRefreshToken = await exchangeAppleAuthorizationCode(code, clientId);
+    if (!appleRefreshToken) return;
+    await prisma.user.update({
+      where: { id: userId },
+      data: { appleRefreshToken: encryptAppleToken(appleRefreshToken), appleClientId: clientId },
+    });
+  } catch (error) {
+    console.error('Could not store the Apple refresh token:', error instanceof Error ? error.message : error);
+  }
+};
+
 export const appleMobileAuth = async (req: Request, res: Response) => {
   try {
-    const { identityToken, firstName } = req.body;
+    const { identityToken, firstName, authorizationCode } = req.body;
 
     if (!identityToken) {
       return res.status(400).json({
@@ -1488,6 +1509,11 @@ export const appleMobileAuth = async (req: Request, res: Response) => {
         return res.status(409).json({ success: false, message: error.message });
       }
       throw error;
+    }
+
+    // Keep an Apple refresh token so deleting the account can revoke it. Never blocks sign-in.
+    if (typeof authorizationCode === 'string' && authorizationCode) {
+      await storeAppleRefreshToken(user.id, authorizationCode, payload.aud);
     }
 
     const { accessToken, refreshToken } = await issueAppleSession(user);

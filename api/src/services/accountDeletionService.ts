@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { decryptAppleToken, revokeAppleRefreshToken } from './appleTokenService.js';
 
 /**
  * Deletes a user and the personal data they own, in one transaction.
@@ -13,8 +14,7 @@ import { PrismaClient } from '@prisma/client';
  */
 export const deleteUserAndData = async (prisma: PrismaClient, userId: string) => {
   const byUser = { where: { userId } };
-
-  return prisma.$transaction(async tx => {
+  const deleted = await prisma.$transaction(async tx => {
     // Rows that reference other user-owned rows go first
     await tx.userDailyRoutine.deleteMany(byUser);
     await tx.medicationReminder.deleteMany({
@@ -54,7 +54,22 @@ export const deleteUserAndData = async (prisma: PrismaClient, userId: string) =>
         username: true,
         profileImage: true,
         createdAt: true,
+        appleRefreshToken: true,
+        appleClientId: true,
       },
     });
   });
+  const { appleRefreshToken, appleClientId, ...user } = deleted;
+
+  // Apple asks apps with Sign in with Apple to revoke the user's tokens on account deletion.
+  // Done after the commit and never fatal: the account is gone either way.
+  if (appleRefreshToken && appleClientId) {
+    try {
+      await revokeAppleRefreshToken(decryptAppleToken(appleRefreshToken), appleClientId);
+    } catch (error) {
+      console.error('Apple token revocation failed:', error instanceof Error ? error.message : error);
+    }
+  }
+
+  return user;
 };

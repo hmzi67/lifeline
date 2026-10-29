@@ -32,6 +32,10 @@ model User {
   displayName          String?   @map("display_name") @db.VarChar(100)
   googleId             String?   @unique @map("google_id") @db.VarChar(255)
   appStoreAccountToken String?   @unique @map("app_store_account_token") @db.VarChar(36)
+  /// Sign in with Apple refresh token (AES-GCM encrypted), revoked when the account is deleted.
+  appleRefreshToken    String?   @map("apple_refresh_token") @db.Text
+  /// The client_id (bundle ID or Services ID) the Apple token was issued to.
+  appleClientId        String?   @map("apple_client_id") @db.VarChar(255)
   profileImage         String?   @map("profile_image") @db.Text
   phone                String?   @db.VarChar(30)
   isEmailVerified      Boolean   @default(false) @map("is_email_verified")

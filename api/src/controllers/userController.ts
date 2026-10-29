@@ -1059,9 +1059,11 @@ export const getUserWithRelations = async (req: Request, res: Response) => {
       });
     }
 
+    // Admins see the profile, never credentials or stored provider tokens.
+    const { password, otp, otpPurpose, otpExpiresAt, otpAttempts, appleRefreshToken, appleClientId, ...safeUser } = user;
     res.status(200).json({
       success: true,
-      data: { user },
+      data: { user: { ...safeUser, hasPassword: !!password } },
     });
   } catch (error) {
     console.error('Get user with relations error:', error);
