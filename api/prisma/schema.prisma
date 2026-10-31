@@ -76,6 +76,7 @@ model User {
   medicationReminders     MedicationReminder[]
   userDailyRoutines       UserDailyRoutine[]
   userFavoriteMeditations UserFavoriteMeditation[]
+  userFavoriteExercisePlans UserFavoriteExercisePlan[]
   blogs                   Blog[]
   blogComments            BlogComment[]
   submittedChallenges     Challenge[]              @relation("SubmittedChallenges")
@@ -414,6 +415,7 @@ model ExercisePlan {
   durationWeeks          Int?                     @map("duration_weeks")
   exercisePlanWeeks      ExercisePlanWeek[]
   userActiveExercisePlan UserActiveExercisePlan[]
+  userFavorites          UserFavoriteExercisePlan[]
 
   @@map("exercise_plans")
 }
@@ -845,6 +847,20 @@ model UserFavoriteMeditation {
   session     MeditationSession @relation(fields: [sessionId], references: [id])
 
   @@map("user_favorite_meditations")
+}
+
+// Exercise plans a user has hearted on the Exercise tab.
+model UserFavoriteExercisePlan {
+  id          String       @id @default(cuid())
+  userId      String       @map("user_id")
+  planId      String       @map("plan_id")
+  favoritedAt DateTime     @default(now()) @map("favorited_at")
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan        ExercisePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, planId])
+  @@index([userId])
+  @@map("user_favorite_exercise_plans")
 }
 
 // ============================
