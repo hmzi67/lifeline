@@ -7,6 +7,10 @@ const meditationLogSchema = z.object({
   meditationId: z.string({ required_error: 'meditationId is required' }).trim().min(1, 'meditationId is required'),
   // Seconds actually listened; a session is at most a few hours.
   durationSeconds: z.coerce.number().int().min(0).max(6 * 60 * 60).optional().nullable(),
+  // A meditation added later to a missed day; defaults to now. Up to a week back, never ahead.
+  completedAt: z.coerce.date().optional().nullable()
+    .refine(date => !date || (date.getTime() <= Date.now() + 60_000 && date.getTime() >= Date.now() - 8 * 86_400_000),
+      'completedAt must be within the past week'),
 });
 
 const userIdOf = (req: Request) => (req as AuthenticatedRequest).user?.id;
@@ -46,7 +50,12 @@ export const createMeditationLog = async (req: Request, res: Response) => {
     if (!meditation) return res.status(404).json({ success: false, message: 'Meditation not found' });
 
     const log = await prisma.userMeditationLog.create({
-      data: { userId, meditationId: meditation.id, durationSeconds: parsed.data.durationSeconds ?? null },
+      data: {
+        userId,
+        meditationId: meditation.id,
+        durationSeconds: parsed.data.durationSeconds ?? null,
+        ...(parsed.data.completedAt ? { completedAt: parsed.data.completedAt } : {}),
+      },
       include: { meditation: true },
     });
     res.status(201).json({ success: true, data: log, message: 'Meditation recorded' });

@@ -186,7 +186,8 @@ export const completeUserExerciseProgress = async (
       progressPercent: clampProgress(progressPercent),
       note: persistedNote,
       completed: completed ?? true,
-      completedAt: completedAt ? new Date(completedAt) : new Date(),
+      // A past day is allowed (a missed workout added later); a future or invalid one means now.
+      completedAt: completedAt && Date.parse(completedAt) <= Date.now() ? new Date(completedAt) : new Date(),
     };
 
     const savedProgress = existingOpenProgress
