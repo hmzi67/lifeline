@@ -31,7 +31,7 @@ interface RefreshTokenPayload {
 
 const prisma = new PrismaClient();
 
-const REFRESH_TOKEN_ROTATION_GRACE_MS = 60 * 1000;
+const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Validation schemas
 const signupSchema = z.object({
@@ -51,7 +51,8 @@ export const generateTokens = (userId: string, email: string, roleId?: string) =
   const accessToken = jwt.sign(
     { userId, email, roleId },
     config.jwt.secret,
-    { expiresIn: '15m' }
+    // An hour, so most app opens need no refresh (each refresh is a chance to lose its reply).
+    { expiresIn: '1h' }
   );
 
   // jwtid keeps two refresh tokens issued in the same second distinct (token is @unique)
@@ -435,20 +436,18 @@ export const login = async (req: Request, res: Response) => {
       user.roleId || undefined
     );
 
-    // Clean up old refresh tokens for this user (keep only the latest 5)
-    const existingTokens = await prisma.refreshToken.findMany({
-      where: { userId: user.id },
+    // Keep the latest 5 sessions. A session is its newest token; a refreshed token
+    // waiting for its replacement's first use belongs to the same session and goes with it.
+    const sessions = await prisma.refreshToken.findMany({
+      where: { userId: user.id, replacedById: null },
       orderBy: { createdAt: 'desc' },
+      select: { id: true },
     });
 
-    if (existingTokens.length >= 5) {
-      const tokensToDelete = existingTokens.slice(4);
+    if (sessions.length >= 5) {
+      const staleIds = sessions.slice(4).map(token => token.id);
       await prisma.refreshToken.deleteMany({
-        where: {
-          id: {
-            in: tokensToDelete.map(token => token.id),
-          },
-        },
+        where: { OR: [{ id: { in: staleIds } }, { replacedById: { in: staleIds } }] },
       });
     }
 
@@ -524,10 +523,22 @@ export const logout = async (req: Request, res: Response) => {
     const refreshToken = req.body?.refreshToken || readCookie(req, 'refreshToken');
 
     if (refreshToken) {
-      // Remove refresh token from database
-      await prisma.refreshToken.deleteMany({
+      // Remove the token and the rest of its session: the token it replaced and its replacement.
+      const stored = await prisma.refreshToken.findUnique({
         where: { token: refreshToken },
+        select: { id: true, replacedById: true },
       });
+      if (stored) {
+        await prisma.refreshToken.deleteMany({
+          where: {
+            OR: [
+              { id: stored.id },
+              { replacedById: stored.id },
+              ...(stored.replacedById ? [{ id: stored.replacedById }] : []),
+            ],
+          },
+        });
+      }
     }
 
     // Clear refresh token cookie
@@ -614,29 +625,64 @@ export const refreshToken = async (req: Request, res: Response) => {
       });
     }
 
-    // Rotate: issue a fresh 7-day refresh token so active users stay signed in
-    const { accessToken, refreshToken: newRefreshToken } = generateTokens(
+    // Rotate without ever stranding the client: the presented token stays valid until
+    // its replacement is first used, which proves the client received it.
+    const now = new Date();
+    let replacement = storedToken.replacedById
+      ? await prisma.refreshToken.findFirst({
+          where: { id: storedToken.replacedById, expiresAt: { gt: now } },
+          select: { id: true, token: true },
+        })
+      : null;
+
+    // No replacement yet (or it expired): issue one. When the token already has an unused
+    // replacement, the reply carrying it was lost or two refreshes raced, so it is sent again.
+    if (!replacement) {
+      const { refreshToken: issued } = generateTokens(
+        storedToken.user.id,
+        storedToken.user.email,
+        storedToken.user.roleId || undefined
+      );
+      replacement = await prisma.$transaction(async (tx) => {
+        const created = await tx.refreshToken.create({
+          data: {
+            token: issued,
+            userId: storedToken.user.id,
+            expiresAt: new Date(now.getTime() + REFRESH_TOKEN_TTL_MS),
+          },
+          select: { id: true, token: true },
+        });
+        const claimed = await tx.refreshToken.updateMany({
+          where: { id: storedToken.id, replacedById: storedToken.replacedById },
+          data: { replacedById: created.id },
+        });
+        if (claimed.count === 1) return created;
+
+        // A parallel refresh with the same token got there first: hand out its replacement.
+        await tx.refreshToken.delete({ where: { id: created.id } });
+        const current = await tx.refreshToken.findUnique({ where: { id: storedToken.id }, select: { replacedById: true } });
+        return current?.replacedById
+          ? tx.refreshToken.findUnique({ where: { id: current.replacedById }, select: { id: true, token: true } })
+          : null;
+      });
+    }
+
+    if (!replacement) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired refresh token',
+      });
+    }
+
+    // Using this token proves the client received it, so the token it replaced can go.
+    await prisma.refreshToken.deleteMany({ where: { replacedById: storedToken.id } });
+
+    const { accessToken } = generateTokens(
       storedToken.user.id,
       storedToken.user.email,
       storedToken.user.roleId || undefined
     );
-
-    // The old token stays valid briefly so parallel requests that refresh with
-    // it at the same moment do not sign the user out.
-    const graceExpiresAt = new Date(Date.now() + REFRESH_TOKEN_ROTATION_GRACE_MS);
-    await prisma.$transaction([
-      prisma.refreshToken.create({
-        data: {
-          token: newRefreshToken,
-          userId: storedToken.user.id,
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-        },
-      }),
-      prisma.refreshToken.updateMany({
-        where: { id: storedToken.id, expiresAt: { gt: graceExpiresAt } },
-        data: { expiresAt: graceExpiresAt },
-      }),
-    ]);
+    const newRefreshToken = replacement.token;
 
     res.cookie('refreshToken', newRefreshToken, {
       httpOnly: true,

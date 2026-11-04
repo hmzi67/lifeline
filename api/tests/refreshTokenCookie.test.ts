@@ -5,7 +5,9 @@ const mockPrisma = {
     create: jest.fn(),
     deleteMany: jest.fn(),
     findFirst: jest.fn(),
+    findUnique: jest.fn(),
     updateMany: jest.fn(),
+    delete: jest.fn(),
   },
   $transaction: jest.fn(),
 };
@@ -48,12 +50,15 @@ describe('refresh token cookie (web)', () => {
     for (const mock of Object.values(mockPrisma.refreshToken)) mock.mockReset();
     mockPrisma.$transaction.mockReset();
     mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 0 });
-    mockPrisma.$transaction.mockResolvedValue([]);
+    mockPrisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mockPrisma));
+    mockPrisma.refreshToken.create.mockResolvedValue({ id: 'next', token: 'next-token' });
+    mockPrisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
   });
 
   it('refreshes a session from the refreshToken cookie alone', async () => {
     mockPrisma.refreshToken.findFirst.mockResolvedValue({
       id: 'stored',
+      replacedById: null,
       user: { id: 'user-1', email: 'user@example.com', roleId: null },
     });
     const response = createResponse();
@@ -84,11 +89,15 @@ describe('refresh token cookie (web)', () => {
   });
 
   it('revokes the cookie token on logout', async () => {
+    mockPrisma.refreshToken.findUnique.mockResolvedValue({ id: 'stored', replacedById: null });
     const response = createResponse();
 
     await logout(cookieRequest(`refreshToken=${token}`), response);
 
-    expect(mockPrisma.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { token } });
+    expect(mockPrisma.refreshToken.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { token } }));
+    expect(mockPrisma.refreshToken.deleteMany).toHaveBeenCalledWith({
+      where: { OR: [{ id: 'stored' }, { replacedById: 'stored' }] },
+    });
     expect(response.cleared).toContain('refreshToken');
   });
 });

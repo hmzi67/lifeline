@@ -15,7 +15,8 @@ const mockPrisma = {
   },
 };
 
-const mockTransaction = (operations: Promise<unknown>[]) => Promise.all(operations);
+const mockTransaction = (operations: Promise<unknown>[] | ((tx: unknown) => unknown)) =>
+  typeof operations === 'function' ? operations(mockPrisma) : Promise.all(operations);
 
 jest.mock('@prisma/client', () => ({
   PrismaClient: jest.fn(() => ({ ...mockPrisma, $transaction: mockTransaction })),
@@ -198,9 +199,12 @@ describe('Google mobile authentication', () => {
 
     mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 0 });
     mockPrisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.refreshToken.create.mockImplementation(({ data }: any) =>
+      Promise.resolve({ id: 'rotated-record', token: data.token }));
     mockPrisma.refreshToken.findFirst.mockResolvedValue({
       id: 'refresh-record',
       token: refreshToken,
+      replacedById: null,
       user: {
         id: 'user-new',
         email: 'new.user@example.com',
@@ -227,17 +231,17 @@ describe('Google mobile authentication', () => {
     const rotatedRefreshToken = refreshResponse.body.data.refreshToken;
     expect(rotatedRefreshToken).toEqual(expect.any(String));
     expect(rotatedRefreshToken).not.toBe(refreshToken);
-    expect(mockPrisma.refreshToken.create).toHaveBeenLastCalledWith({
+    expect(mockPrisma.refreshToken.create).toHaveBeenLastCalledWith(expect.objectContaining({
       data: {
         token: rotatedRefreshToken,
         userId: 'user-new',
         expiresAt: expect.any(Date),
       },
-    });
-    // The old token is only shortened to a brief grace window, not deleted
+    }));
+    // The old token stays valid, linked to its replacement until that is first used
     expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith({
-      where: { id: 'refresh-record', expiresAt: { gt: expect.any(Date) } },
-      data: { expiresAt: expect.any(Date) },
+      where: { id: 'refresh-record', replacedById: null },
+      data: { replacedById: 'rotated-record' },
     });
   });
 
