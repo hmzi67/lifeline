@@ -1079,7 +1079,7 @@ const ExerciseComponent: React.FC = () => {
                     <div className="hidden md:flex gap-2 overflow-x-auto">
                         {formData.sets && formData.reps && (
                             <span className="text-xs bg-teal-50 border border-teal-200 text-teal-700 font-semibold px-2.5 py-1 rounded-full whitespace-nowrap">
-                                {formData.sets} sets \u00D7 {formData.reps} reps
+                                {formData.sets} sets × {formData.reps} reps
                             </span>
                         )}
                         {formData.duration && (
