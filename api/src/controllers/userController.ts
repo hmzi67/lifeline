@@ -8,6 +8,7 @@ import { deleteUserAndData } from '../services/accountDeletionService.js';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 import { isSuspended } from '../utils/accountAccess.js';
 import { generateTokens } from './authController.js';
+import { isValidTimeZone } from '../services/missedActivityReminders.js';
 
 const prisma = new PrismaClient();
 
@@ -312,10 +313,12 @@ export const registerPushToken = async (req: Request, res: Response) => {
     }
 
     // `pushToken` is an FCM token; app builds from before FCM send an Expo token as `expoPushToken`.
-    const { pushToken: fcmOrExpoToken, expoPushToken, platform } = req.body as {
+    const { pushToken: fcmOrExpoToken, expoPushToken, platform, timezone } = req.body as {
       pushToken?: unknown;
       expoPushToken?: unknown;
       platform?: string;
+      /** IANA zone of the device, so evening reminders arrive at the user's 9 PM. */
+      timezone?: unknown;
     };
     const pushToken = fcmOrExpoToken ?? expoPushToken;
 
@@ -357,6 +360,13 @@ export const registerPushToken = async (req: Request, res: Response) => {
           scope,
         },
       }),
+      ...(typeof timezone === 'string' && timezone.length <= 64 && isValidTimeZone(timezone)
+        ? [prisma.appSetting.upsert({
+            where: { id: `${scope}:timezone` },
+            update: { value: timezone },
+            create: { id: `${scope}:timezone`, key: 'timezone', value: timezone, scope },
+          })]
+        : []),
     ]);
 
     return res.status(200).json({
