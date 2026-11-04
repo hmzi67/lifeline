@@ -69,6 +69,7 @@ import userExerciseProgressRoutes from './routes/userExerciseProgressRoutes.js';
 import warmupRoutes from './routes/warmupRoutes.js';
 import userFavoriteMeditationRoutes from './routes/userFavoriteMeditationRoutes.js';
 import userFavoriteExercisePlanRoutes from './routes/userFavoriteExercisePlanRoutes.js';
+import userFavoriteSleepItemRoutes from './routes/userFavoriteSleepItemRoutes.js';
 import meditationLogRoutes from './routes/meditationLogRoutes.js';
 import adminDashboardRoutes from './routes/adminDashboardRoutes.js';
 import userRoute from './routes/userRoutes.js';
@@ -231,6 +232,7 @@ app.use('/api/active-exercise-plans', userActiveExercisePlanRoutes);
 app.use('/api/meditation-sessions', meditationSessionRoutes);
 app.use('/api/favorite-meditations', userFavoriteMeditationRoutes);
 app.use('/api/favorite-exercise-plans', userFavoriteExercisePlanRoutes);
+app.use('/api/favorite-sleep', userFavoriteSleepItemRoutes);
 app.use('/api/meditation-logs', meditationLogRoutes);
 
 // Water goal routes

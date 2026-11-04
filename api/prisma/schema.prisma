@@ -77,6 +77,7 @@ model User {
   userDailyRoutines       UserDailyRoutine[]
   userFavoriteMeditations UserFavoriteMeditation[]
   userFavoriteExercisePlans UserFavoriteExercisePlan[]
+  userFavoriteSleepItems    UserFavoriteSleepItem[]
   blogs                   Blog[]
   blogComments            BlogComment[]
   submittedChallenges     Challenge[]              @relation("SubmittedChallenges")
@@ -902,6 +903,7 @@ model SleepStory {
   category    String? @db.VarChar(50)
   duration    Int?
   isActive    Boolean @default(true) @map("is_active")
+  favorites   UserFavoriteSleepItem[]
 
   @@map("sleep_stories")
 }
@@ -916,8 +918,27 @@ model SleepSound {
   category    String? @db.VarChar(50)
   duration    Int?
   isActive    Boolean @default(true) @map("is_active")
+  favorites   UserFavoriteSleepItem[]
 
   @@map("sleep_sounds")
+}
+
+// Sleep sounds and stories a user has hearted on Better Sleep / Sleep Stories.
+// Exactly one of soundId and storyId is set (enforced by a CHECK in the migration).
+model UserFavoriteSleepItem {
+  id          String      @id @default(cuid())
+  userId      String      @map("user_id")
+  soundId     String?     @map("sound_id")
+  storyId     String?     @map("story_id")
+  favoritedAt DateTime    @default(now()) @map("favorited_at")
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sound       SleepSound? @relation(fields: [soundId], references: [id], onDelete: Cascade)
+  story       SleepStory? @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, soundId])
+  @@unique([userId, storyId])
+  @@index([userId])
+  @@map("user_favorite_sleep_items")
 }
 
 // ============================

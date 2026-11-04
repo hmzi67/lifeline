@@ -886,7 +886,7 @@ export const exportOwnData = async (req: Request, res: Response) => {
       profile, questionnaire, waterIntake, waterGoals, sleepLogs, fastingLogs, medications,
       cheatDays, foodLogs, dietMealLogs, weightLogs, dailyRoutines, activeDietPlans,
       activeExercisePlans, exerciseProgress, challenges, payments, favoriteMeditations, favoriteExercisePlans,
-      notifications,
+      favoriteSleepItems, notifications,
     ] = await Promise.all([
       prisma.user.findUnique({ where: { id: userId }, select: USER_PUBLIC_SELECT }),
       prisma.questionnaire.findMany(own),
@@ -910,6 +910,10 @@ export const exportOwnData = async (req: Request, res: Response) => {
       }),
       prisma.userFavoriteMeditation.findMany(own),
       prisma.userFavoriteExercisePlan.findMany({ ...own, include: { plan: { select: { name: true } } } }),
+      prisma.userFavoriteSleepItem.findMany({
+        ...own,
+        include: { sound: { select: { name: true } }, story: { select: { title: true } } },
+      }),
       prisma.notification.findMany(own),
     ]);
 
@@ -920,7 +924,7 @@ export const exportOwnData = async (req: Request, res: Response) => {
         profile, questionnaire, waterIntake, waterGoals, sleepLogs, fastingLogs, medications,
         cheatDays, foodLogs, dietMealLogs, weightLogs, dailyRoutines, activeDietPlans,
         activeExercisePlans, exerciseProgress, challenges, payments, favoriteMeditations, favoriteExercisePlans,
-        notifications,
+        favoriteSleepItems, notifications,
       },
     });
   } catch (error) {
