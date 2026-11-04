@@ -88,6 +88,16 @@ export const createDietPlanMeal = async (req: Request, res: Response): Promise<v
       return;
     }
 
+    // Column limits from schema.prisma; reject here instead of failing in the database.
+    if (String(name).length > 100) {
+      res.status(400).json({ success: false, message: 'Meal name must be 100 characters or fewer' });
+      return;
+    }
+    if (portionSize && String(portionSize).length > 50) {
+      res.status(400).json({ success: false, message: 'Portion size must be 50 characters or fewer' });
+      return;
+    }
+
     // Verify day exists
     const day = await prisma.dietPlanDay.findUnique({
       where: { id: dayId }

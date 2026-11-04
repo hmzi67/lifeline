@@ -397,8 +397,8 @@ const DietComponent: React.FC = () => {
             await api.delete(`/diet-plans/${id}`);
             showToast('Diet plan deleted.');
             fetchDietPlans();
-        } catch {
-            showToast('Failed to delete diet plan.', 'error');
+        } catch (err: any) {
+            showToast(err.response?.data?.message || 'Failed to delete diet plan.', 'error');
         }
     };
 
@@ -412,6 +412,10 @@ const DietComponent: React.FC = () => {
 
         setSaving(true);
         setSaveError('');
+
+        // Set once a new plan row exists, so a failed day/meal step can remove it
+        // instead of leaving an empty duplicate in the list.
+        let createdPlanId: string | null = null;
 
         try {
             const durationDays = planInfo.duration === 'custom' ? planInfo.customDays : planInfo.duration;
@@ -434,7 +438,7 @@ const DietComponent: React.FC = () => {
             } else {
                 const res = await api.post('/diet-plans', submitData);
                 planId = res.data?.data?.id;
-                showToast('Diet plan created successfully.');
+                createdPlanId = planId || null;
             }
 
             // For new plans: create a single day and save all meals under it
@@ -462,11 +466,16 @@ const DietComponent: React.FC = () => {
                 }
             }
 
+            if (!editingPlan) showToast('Diet plan created successfully.');
             resetAll();
             setView('list');
             fetchDietPlans();
         } catch (err: any) {
-            const msg = err.response?.data?.message || 'Failed to save diet plan.';
+            if (createdPlanId) {
+                await api.delete(`/diet-plans/${createdPlanId}`).catch(() => undefined);
+            }
+            const data = err.response?.data;
+            const msg = data?.message || data?.error?.message || 'Failed to save diet plan.';
             setSaveError(msg);
             showToast(msg, 'error');
         } finally {

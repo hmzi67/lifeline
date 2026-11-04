@@ -406,9 +406,31 @@ export const deleteDietPlan = async (req: Request<{ id: string }>, res: Response
       return;
     }
 
-    await prisma.dietPlan.delete({
-      where: { id }
-    });
+    // Days, meals and user links reference the plan without ON DELETE CASCADE, so a
+    // bare delete fails on the foreign keys. Refuse while users or challenges still
+    // use the plan; otherwise remove the plan's own content with it.
+    const [userCount, challengeCount] = await Promise.all([
+      prisma.userActiveDietPlan.count({ where: { dietId: id } }),
+      prisma.challengeDiet.count({ where: { dietId: id } }),
+    ]);
+    if (userCount > 0 || challengeCount > 0) {
+      const usedBy = [
+        userCount > 0 ? `${userCount} user${userCount === 1 ? '' : 's'}` : null,
+        challengeCount > 0 ? `${challengeCount} challenge${challengeCount === 1 ? '' : 's'}` : null,
+      ].filter(Boolean).join(' and ');
+      res.status(409).json({
+        success: false,
+        message: `This diet plan is in use by ${usedBy} and can't be deleted.`
+      });
+      return;
+    }
+
+    await prisma.$transaction([
+      prisma.dietPlanMeal.deleteMany({ where: { day: { dietId: id } } }),
+      prisma.dietPlanDay.deleteMany({ where: { dietId: id } }),
+      prisma.userDietPlan.deleteMany({ where: { dietId: id } }),
+      prisma.dietPlan.delete({ where: { id } }),
+    ]);
 
     res.status(200).json({
       success: true,
