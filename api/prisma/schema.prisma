@@ -280,6 +280,8 @@ model DietPlan {
   image              String?              @db.Text
   cuisineName        String?              @map("cuisine_name") @db.VarChar(50)
   gender             String?              @db.VarChar(20)
+  /// Who the plan is for (weight_loss, weight_gain, build_muscle, ...); matched against the user's goal.
+  goal               String?              @db.VarChar(50)
   userDietPlans      UserDietPlan[]
   userActiveDietPlan UserActiveDietPlan[]
   challengeDiets     ChallengeDiet[]

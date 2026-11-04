@@ -13,6 +13,7 @@ interface DietPlanQuery {
 
 interface CreateDietPlanBody {
   name: string;
+  goal?: string | null;
   calories?: number;
   duration?: string;
   description?: string;
@@ -23,6 +24,7 @@ interface CreateDietPlanBody {
 
 interface UpdateDietPlanBody {
   name?: string;
+  goal?: string | null;
   calories?: number;
   duration?: string;
   description?: string;
@@ -47,6 +49,30 @@ const BMI_CATEGORY_KEYWORDS: Record<string, string[]> = {
   overweight: ['overweight', 'bmi overweight'],
   obese: ['obese', 'obesity', 'bmi obese'],
 };
+
+// Goals an admin can give a plan, with the words the app matches a user's goal against.
+// Sent to clients as `category`, which current app builds already search when filtering plans.
+export const DIET_PLAN_GOALS: Record<string, string> = {
+  weight_loss: 'weight loss',
+  weight_gain: 'weight gain',
+  build_muscle: 'build muscle',
+  modify_diet: 'modify diet',
+  manage_stress: 'manage stress',
+  intermittent_fasting: 'intermittent fasting',
+};
+
+/** undefined: not sent; null: cleared; string: a known goal. Throws on an unknown goal. */
+const parseGoal = (value: unknown): string | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  if (typeof value === 'string' && DIET_PLAN_GOALS[value]) return value;
+  throw new Error(`goal must be one of: ${Object.keys(DIET_PLAN_GOALS).join(', ')}`);
+};
+
+const withCategory = <T extends { goal?: string | null }>(plan: T): T & { category: string | null } => ({
+  ...plan,
+  category: plan.goal ? DIET_PLAN_GOALS[plan.goal] ?? null : null,
+});
 
 const normalizeText = (value: string | null | undefined): string => {
   return (value || '').trim().toLowerCase().replace(/[_-]+/g, ' ');
@@ -170,7 +196,7 @@ export const getAllDietPlans = async (req: Request, res: Response): Promise<void
       }
     });
 
-    let personalizedDietPlans = dietPlans;
+    let personalizedDietPlans = dietPlans.map(withCategory);
 
     const userId = parseUserIdFromToken(req.headers.authorization);
     if (userId) {
@@ -286,7 +312,7 @@ export const getDietPlanById = async (req: Request, res: Response): Promise<void
 
     res.status(200).json({
       success: true,
-      data: dietPlan,
+      data: withCategory(dietPlan),
       message: 'Diet plan retrieved successfully'
     });
   } catch (error) {
@@ -313,6 +339,14 @@ export const createDietPlan = async (req: Request<{}, {}, CreateDietPlanBody>, r
       return;
     }
 
+    let goal: string | null | undefined;
+    try {
+      goal = parseGoal(req.body.goal);
+    } catch (e) {
+      res.status(400).json({ success: false, message: (e as Error).message });
+      return;
+    }
+
     const dietPlan = await prisma.dietPlan.create({
       data: {
         name,
@@ -322,12 +356,13 @@ export const createDietPlan = async (req: Request<{}, {}, CreateDietPlanBody>, r
         image: image || null,
         cuisineName: cuisineName || null,
         gender: gender || null,
+        goal: goal ?? null,
       }
     });
 
     res.status(201).json({
       success: true,
-      data: dietPlan,
+      data: withCategory(dietPlan),
       message: 'Diet plan created successfully'
     });
   } catch (error) {
@@ -359,7 +394,16 @@ export const updateDietPlan = async (req: Request<{ id: string }, {}, UpdateDiet
       return;
     }
 
+    let goal: string | null | undefined;
+    try {
+      goal = parseGoal(req.body.goal);
+    } catch (e) {
+      res.status(400).json({ success: false, message: (e as Error).message });
+      return;
+    }
+
     const updateData: Partial<CreateDietPlanBody> = {};
+    if (goal !== undefined) updateData.goal = goal;
     if (name !== undefined) updateData.name = name;
     if (calories !== undefined) updateData.calories = calories;
     if (duration !== undefined) updateData.duration = duration;
@@ -375,7 +419,7 @@ export const updateDietPlan = async (req: Request<{ id: string }, {}, UpdateDiet
 
     res.status(200).json({
       success: true,
-      data: updatedDietPlan,
+      data: withCategory(updatedDietPlan),
       message: 'Diet plan updated successfully'
     });
   } catch (error) {
@@ -487,7 +531,7 @@ export const searchDietPlans = async (req: Request<{}, {}, {}, DietPlanQuery>, r
 
     res.status(200).json({
       success: true,
-      data: dietPlans,
+      data: dietPlans.map(withCategory),
       message: 'Diet plans search completed successfully'
     });
   } catch (error) {

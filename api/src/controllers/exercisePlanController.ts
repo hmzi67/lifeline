@@ -195,9 +195,27 @@ export const deleteExercisePlan = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    await prisma.exercisePlan.delete({
-      where: { id }
-    });
+    // Weeks and workouts reference the plan without ON DELETE CASCADE, so a bare delete fails.
+    // Refuse while users follow the plan or have progress on it; otherwise remove its content too.
+    const [activeUsers, progressRows] = await Promise.all([
+      prisma.userActiveExercisePlan.count({ where: { planId: id } }),
+      prisma.userExerciseProgress.count({ where: { exerciseSchedule: { week: { planId: id } } } }),
+    ]);
+    if (activeUsers > 0 || progressRows > 0) {
+      res.status(409).json({
+        success: false,
+        message: activeUsers > 0
+          ? `This exercise plan is in use by ${activeUsers} user${activeUsers === 1 ? '' : 's'} and can't be deleted.`
+          : "Users have progress on this exercise plan, so it can't be deleted."
+      });
+      return;
+    }
+
+    await prisma.$transaction([
+      prisma.exercisePlanSchedule.deleteMany({ where: { week: { planId: id } } }),
+      prisma.exercisePlanWeek.deleteMany({ where: { planId: id } }),
+      prisma.exercisePlan.delete({ where: { id } }),
+    ]);
 
     res.status(200).json({
       success: true,
