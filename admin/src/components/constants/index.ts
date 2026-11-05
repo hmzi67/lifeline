@@ -20,7 +20,8 @@ import {
     Activity,
     TrendingUp,
     CheckCircle,
-    CalendarDays
+    CalendarDays,
+    Bell
 } from 'lucide-react';
 import type { NavigationItem, StatData, DashboardData } from '@/types';
 
@@ -41,6 +42,7 @@ export const navigationItems: NavigationItem[] = [
     { id: 'pricingPlans', label: 'Pricing Plans', icon: DollarSign },
     { id: 'coupons', label: 'Coupon Codes', icon: Ticket },
     { id: 'referralCodes', label: 'Referral Codes', icon: Link2 },
+    { id: 'notifications', label: 'Notifications', icon: Bell },
 ];
 
 export const getStatsData = (dashboardData: DashboardData | null): StatData[] => [

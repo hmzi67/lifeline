@@ -3,6 +3,7 @@ export { default as UsersComponent } from './UsersComponent';
 export { default as DietComponent } from './DietComponent';
 export { default as ExerciseComponent } from './ExerciseComponent';
 export { default as ExercisePlanComponent } from './ExercisePlanComponent';
+export { default as AnnouncementComponent } from './AnnouncementComponent';
 export { default as GenericComponent } from './GenericComponent';
 export { default as BlogComponent } from './BlogComponent';
 export { default as MeditationComponent } from './MeditationComponent';

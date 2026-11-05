@@ -14,6 +14,7 @@ const DietComponent = lazy(() => import('@/components/pages/DietComponent'));
 const MealTypeComponent = lazy(() => import('@/components/pages/MealTypeComponent'));
 const ExerciseComponent = lazy(() => import('@/components/pages/ExerciseComponent'));
 const ExercisePlanComponent = lazy(() => import('@/components/pages/ExercisePlanComponent'));
+const AnnouncementComponent = lazy(() => import('@/components/pages/AnnouncementComponent'));
 const ChallengeComponent = lazy(() => import('@/components/pages/ChallengeComponent'));
 const MeditationComponent = lazy(() => import('@/components/pages/MeditationComponent'));
 const SleepStoriesComponent = lazy(() => import('@/components/pages/SleepStoriesComponent'));
@@ -75,6 +76,8 @@ const AdminLayout: React.FC = () => {
                 return <PricingPlanComponent />;
             case 'coupons':
                 return <CouponComponent />;
+            case 'notifications':
+                return <AnnouncementComponent />;
             case 'referralCodes':
                 return <ReferralComponent />;
             default:

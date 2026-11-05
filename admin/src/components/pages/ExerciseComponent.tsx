@@ -62,6 +62,8 @@ const FOCUS_AREAS = [
     { label: 'Back', value: 'Back' },
     { label: 'Belly / Core', value: 'Belly / Core' },
     { label: 'Legs', value: 'Legs' },
+    // The app's warm-up lists exercises whose purpose mentions "warm".
+    { label: 'Warm-up', value: 'Warm-up' },
 ];
 
 const DIFFICULTY_OPTIONS: { value: string; label: string; Icon: LucideIcon; iconClass: string; active: string; hover: string }[] = [

@@ -24,6 +24,8 @@ interface Challenge {
     endDate: string | null;
     durationDays?: number | null;
     dailyFee?: string | number | null;
+    challengeExercises?: { exerciseId: string }[];
+    challengeDiets?: { dietId: string }[];
     submittedBy?: {
         id: string;
         username: string | null;
@@ -506,6 +508,18 @@ const ChallengeComponent: React.FC = () => {
         } catch { /* silent */ }
     };
 
+    // Exercises (shown on the app's Join Challenge screen) and diet plans that can be attached.
+    const [exerciseOptions, setExerciseOptions] = useState<{ value: string; label: string }[]>([]);
+    const [dietOptions, setDietOptions] = useState<{ value: string; label: string }[]>([]);
+    useEffect(() => {
+        api.get('/exercises')
+            .then(res => setExerciseOptions((res.data?.data || []).map((e: any) => ({ value: e.id, label: e.name || 'Exercise' }))))
+            .catch(() => setExerciseOptions([]));
+        api.get('/diet-plans')
+            .then(res => setDietOptions((res.data?.data || []).map((d: any) => ({ value: d.id, label: d.name || 'Diet plan' }))))
+            .catch(() => setDietOptions([]));
+    }, []);
+
     const handleAdd = () => { setEditingChallenge(null); setIsModalOpen(true); };
     const handleEdit = (challenge: Challenge) => { setEditingChallenge(challenge); setIsModalOpen(true); };
 
@@ -520,12 +534,17 @@ const ChallengeComponent: React.FC = () => {
     };
 
     const handleSubmit = async (data: Record<string, any>) => {
+        // The challenge itself, then which exercises and diet plans belong to it.
+        const { exerciseIds = [], dietIds = [], challengeExercises: _e, challengeDiets: _d, ...challenge } = data;
         try {
+            let id = editingChallenge?.id;
             if (editingChallenge) {
-                await challengeService.update(editingChallenge.id, data);
+                await challengeService.update(editingChallenge.id, challenge);
             } else {
-                await challengeService.create(data);
+                const created = await challengeService.create(challenge);
+                id = created.data?.id;
             }
+            if (id) await api.put(`/challenges/${id}/content`, { exerciseIds, dietIds });
             fetchChallenges();
         } catch (err: any) {
             throw new Error(handleApiError(err));
@@ -626,7 +645,24 @@ const ChallengeComponent: React.FC = () => {
         { name: 'dailyFee', label: 'Daily Fee (USD)', type: 'number', min: 0, placeholder: 'Empty = free to join' },
         { name: 'image', label: 'Cover Image', type: 'file', accept: 'image/*' },
         { name: 'videoUrl', label: 'Challenge Video', type: 'file', accept: 'video/*' },
+        {
+            name: 'exerciseIds', label: 'Exercises', type: 'multiselect', options: exerciseOptions,
+            placeholder: 'Search exercises...', hint: 'Shown to users on the Join Challenge screen.',
+        },
+        {
+            name: 'dietIds', label: 'Diet Plans', type: 'multiselect', options: dietOptions,
+            placeholder: 'Search diet plans...',
+        },
     ];
+
+    // Pre-select the challenge's current exercises and diet plans when editing.
+    const modalInitialData = React.useMemo(() => (editingChallenge
+        ? {
+            ...editingChallenge,
+            exerciseIds: (editingChallenge.challengeExercises || []).map(e => e.exerciseId),
+            dietIds: (editingChallenge.challengeDiets || []).map(d => d.dietId),
+        }
+        : {}), [editingChallenge]);
 
     const stats = [
         {
@@ -716,7 +752,7 @@ const ChallengeComponent: React.FC = () => {
                         onSubmit={handleSubmit}
                         title={editingChallenge ? 'Edit Challenge' : 'Add New Challenge'}
                         fields={formFields}
-                        initialData={editingChallenge || {}}
+                        initialData={modalInitialData}
                         submitLabel={editingChallenge ? 'Update' : 'Create'}
                     />
                 </>

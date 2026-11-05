@@ -271,6 +271,11 @@ const DietComponent: React.FC = () => {
     const dayNumbers = Array.from({ length: planDayCount() }, (_, i) => i + 1);
     const filledDays = Object.keys(mealsByDay).map(Number).filter(d => (mealsByDay[d]?.length ?? 0) > 0).sort((a, b) => a - b);
     const totalMeals = filledDays.reduce((sum, d) => sum + mealsByDay[d].length, 0);
+    // Days that still have meals after the duration was shortened: shown in red, block saving.
+    const lateDays = filledDays.filter(d => d > planDayCount());
+    const lateDaysMessage = lateDays.length
+        ? `Day${lateDays.length === 1 ? '' : 's'} ${lateDays.join(', ')} ${lateDays.length === 1 ? 'has' : 'have'} meals, but the plan is only ${planDayCount()} days long. Increase the duration, or open ${lateDays.length === 1 ? 'that day' : 'those days'} (in red) and remove the meals.`
+        : '';
 
     // ── Effects ───────────────────────────────────────────────────────────────
     useEffect(() => {
@@ -388,13 +393,23 @@ const DietComponent: React.FC = () => {
         const from = Number(copyFromDay);
         const source = mealsByDay[from] ?? [];
         if (!from || from === activeDay || source.length === 0) return;
+        // Meals this day already has (same type, name, calories and portion) are not copied again,
+        // so copying twice doesn't duplicate anything.
+        const sameMeal = (m: MealDraft) => [m.mealTypeId, m.name.trim().toLowerCase(), m.calories.trim(), m.portionSize.trim().toLowerCase()].join('|');
+        const existing = new Set(meals.map(sameMeal));
+        const toAdd = source.filter(m => !existing.has(sameMeal(m)));
+        setCopyFromDay('');
+        if (toAdd.length === 0) {
+            showToast(`Day ${activeDay} already has all of Day ${from}'s meals.`, 'error');
+            return;
+        }
         const stamp = Date.now();
         setMeals(prev => [
             ...prev,
-            ...source.map((m, i) => ({ ...m, id: stamp + i, serverId: undefined, ingredients: m.ingredients.map(x => ({ ...x })) })),
+            ...toAdd.map((m, i) => ({ ...m, id: stamp + i, serverId: undefined, ingredients: m.ingredients.map(x => ({ ...x })) })),
         ]);
-        setCopyFromDay('');
-        showToast(`Copied ${source.length} meal${source.length === 1 ? '' : 's'} from Day ${from} to Day ${activeDay}.`);
+        const skipped = source.length - toAdd.length;
+        showToast(`Copied ${toAdd.length} meal${toAdd.length === 1 ? '' : 's'} from Day ${from} to Day ${activeDay}${skipped ? ` (${skipped} already there)` : ''}.`);
     };
 
     // ── Reset ─────────────────────────────────────────────────────────────────
@@ -464,6 +479,9 @@ const DietComponent: React.FC = () => {
                         name: m.name || '',
                         calories: m.calories != null ? String(m.calories) : '',
                         portionSize: m.portionSize || '',
+                        protein: m.protein != null ? String(m.protein) : '',
+                        carbs: m.carbs != null ? String(m.carbs) : '',
+                        fats: m.fats != null ? String(m.fats) : '',
                         recipe: instructions,
                         ingredients: ingredients.length ? ingredients : emptyMeal().ingredients,
                         imagePreview: m.image || '',
@@ -503,10 +521,10 @@ const DietComponent: React.FC = () => {
             showToast(scheduleState === 'loading' ? "This plan's meals are still loading." : "This plan's meals didn't load. Reload the page before saving.", 'error');
             return;
         }
-        const dayCount = planDayCount();
-        const lateDay = filledDays.find(d => d > dayCount);
-        if (lateDay) {
-            showToast(`Day ${lateDay} has meals but the plan is only ${dayCount} days. Increase the duration or remove those meals.`, 'error');
+        if (lateDaysMessage) {
+            setSaveError(lateDaysMessage);
+            showToast(lateDaysMessage, 'error');
+            setActiveTab('meals');
             return;
         }
 
@@ -530,6 +548,9 @@ const DietComponent: React.FC = () => {
                         name: meal.name,
                         calories: meal.calories ? parseInt(meal.calories, 10) : null,
                         portionSize: meal.portionSize || null,
+                        protein: meal.protein ? parseFloat(meal.protein) : null,
+                        carbs: meal.carbs ? parseFloat(meal.carbs) : null,
+                        fats: meal.fats ? parseFloat(meal.fats) : null,
                         image: meal.imageFile ? await uploadFile(meal.imageFile) : (meal.imagePreview || null),
                         recipe: buildRecipeWithIngredients(meal) || null,
                     });
@@ -889,7 +910,8 @@ const DietComponent: React.FC = () => {
                     </div>
                 ) : (
                     <div className="flex flex-wrap gap-2 max-h-44 overflow-y-auto">
-                        {dayNumbers.map(d => {
+                        {[...dayNumbers, ...lateDays].map(d => {
+                            const late = d > planDayCount();
                             const count = mealsByDay[d]?.length || 0;
                             const active = d === activeDay;
                             return (
@@ -898,7 +920,9 @@ const DietComponent: React.FC = () => {
                                     type="button"
                                     onClick={() => { setActiveDay(d); setCopyFromDay(''); }}
                                     className={`px-3 py-1.5 rounded-lg border-2 text-xs font-semibold transition-all
-                                        ${active
+                                        ${late
+                                            ? `border-red-400 text-red-600 ${active ? 'bg-red-50' : 'hover:bg-red-50'}`
+                                            : active
                                             ? 'border-teal-500 bg-teal-50 text-teal-700'
                                             : count
                                                 ? 'border-teal-200 text-gray-700 hover:border-teal-400'
@@ -910,8 +934,14 @@ const DietComponent: React.FC = () => {
                         })}
                     </div>
                 )}
+                {lateDaysMessage && (
+                    <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                        <p className="text-xs text-red-600">{lateDaysMessage}</p>
+                    </div>
+                )}
                 <p className="text-[10px] text-gray-400 mt-2">
-                    {filledDays.length} of {planDayCount()} days have meals. The number of days comes from the plan's duration; days without meals show nothing in the app.
+                    {filledDays.filter(d => d <= planDayCount()).length} of {planDayCount()} days have meals. The number of days comes from the plan's duration; days without meals show nothing in the app.
                 </p>
             </SectionCard>
 
@@ -951,6 +981,7 @@ const DietComponent: React.FC = () => {
                         </Label>
                         <Input
                             value={currentMeal.name}
+                            maxLength={100}
                             onChange={e => handleMealChange('name', e.target.value)}
                             placeholder="e.g. Egg with Brown Bread"
                         />
@@ -1007,6 +1038,7 @@ const DietComponent: React.FC = () => {
                     <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Portion Size</Label>
                     <Input
                         value={currentMeal.portionSize}
+                        maxLength={150}
                         onChange={e => handleMealChange('portionSize', e.target.value)}
                         placeholder="e.g. 1 bowl (300g)"
                     />

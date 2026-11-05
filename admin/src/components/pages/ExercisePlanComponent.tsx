@@ -103,6 +103,11 @@ const ExercisePlanComponent: React.FC = () => {
     const weekNumbers = Array.from({ length: weekCount }, (_, i) => i + 1);
     const rowsIn = (week: number) => WEEKDAYS.reduce((sum, d) => sum + (weeks[week]?.[d]?.length || 0), 0);
     const filledWeeks = Object.keys(weeks).map(Number).filter(w => rowsIn(w) > 0).sort((a, b) => a - b);
+    // Weeks that still have workouts after the number of weeks was lowered: shown in red, block saving.
+    const lateWeeks = filledWeeks.filter(w => w > weekCount);
+    const lateWeeksMessage = lateWeeks.length
+        ? `Week${lateWeeks.length === 1 ? '' : 's'} ${lateWeeks.join(', ')} ${lateWeeks.length === 1 ? 'has' : 'have'} workouts, but the plan is only ${weekCount} week${weekCount === 1 ? '' : 's'} long. Increase the weeks, or open ${lateWeeks.length === 1 ? 'that week' : 'those weeks'} (in red) and remove the workouts.`
+        : '';
 
     useEffect(() => {
         fetchPlans();
@@ -211,16 +216,29 @@ const ExercisePlanComponent: React.FC = () => {
         const from = Number(copyFromWeek);
         const source = weeks[from];
         if (!from || from === activeWeek || !source) return;
-        setWeeks(prev => {
-            const target = { ...(prev[activeWeek] || {}) };
-            for (const day of WEEKDAYS) {
-                const rows = source[day] || [];
-                if (rows.length) target[day] = [...(target[day] || []), ...rows.map(r => ({ ...r, key: nextKey(), serverId: undefined }))];
-            }
-            return { ...prev, [activeWeek]: target };
-        });
+        // Exercises a day already has (same exercise, sets, reps and duration) are not copied again,
+        // so copying twice doesn't duplicate anything.
+        const same = (r: RowDraft) => [r.exerciseId, r.sets.trim(), r.reps.trim().toLowerCase(), r.duration.trim().toLowerCase()].join('|');
+        const current = weeks[activeWeek] || {};
+        let added = 0;
+        let skipped = 0;
+        const target = { ...current };
+        for (const day of WEEKDAYS) {
+            const existing = new Set((current[day] || []).map(same));
+            const rows = (source[day] || []).filter(r => {
+                const isNew = !existing.has(same(r));
+                if (isNew) added++; else skipped++;
+                return isNew;
+            });
+            if (rows.length) target[day] = [...(current[day] || []), ...rows.map(r => ({ ...r, key: nextKey(), serverId: undefined }))];
+        }
         setCopyFromWeek('');
-        showToast(`Copied week ${from}'s workouts to week ${activeWeek}.`);
+        if (added === 0) {
+            showToast(`Week ${activeWeek} already has all of week ${from}'s workouts.`, 'error');
+            return;
+        }
+        setWeeks(prev => ({ ...prev, [activeWeek]: target }));
+        showToast(`Copied ${added} exercise${added === 1 ? '' : 's'} from week ${from} to week ${activeWeek}${skipped ? ` (${skipped} already there)` : ''}.`);
     };
 
     // ── Save / delete ─────────────────────────────────────────────────────────
@@ -233,9 +251,9 @@ const ExercisePlanComponent: React.FC = () => {
             showToast("This plan's workouts are still loading.", 'error');
             return;
         }
-        const lateWeek = filledWeeks.find(w => w > weekCount);
-        if (lateWeek) {
-            showToast(`Week ${lateWeek} has workouts but the plan is only ${weekCount} weeks. Increase the weeks or remove them.`, 'error');
+        if (lateWeeksMessage) {
+            setSaveError(lateWeeksMessage);
+            showToast(lateWeeksMessage, 'error');
             return;
         }
         const missing = filledWeeks.flatMap(w => WEEKDAYS.flatMap(d => (weeks[w][d] || []).filter(r => !r.exerciseId).map(() => `week ${w} ${d}`)));
@@ -554,21 +572,28 @@ const ExercisePlanComponent: React.FC = () => {
                 ) : (
                     <>
                         <div className="flex flex-wrap gap-2 mb-4">
-                            {weekNumbers.map(w => {
+                            {[...weekNumbers, ...lateWeeks].map(w => {
                                 const count = rowsIn(w);
+                                const late = w > weekCount;
                                 return (
                                     <button
                                         key={w}
                                         type="button"
                                         onClick={() => { setActiveWeek(w); setCopyFromWeek(''); }}
                                         className={`px-3 py-1.5 rounded-lg border-2 text-xs font-semibold
-                                            ${w === activeWeek ? 'border-teal-500 bg-teal-50 text-teal-700' : count ? 'border-teal-200 text-gray-700 hover:border-teal-400' : 'border-gray-200 text-gray-400 hover:border-teal-300'}`}
+                                            ${late ? `border-red-400 text-red-600 ${w === activeWeek ? 'bg-red-50' : 'hover:bg-red-50'}` : w === activeWeek ? 'border-teal-500 bg-teal-50 text-teal-700' : count ? 'border-teal-200 text-gray-700 hover:border-teal-400' : 'border-gray-200 text-gray-400 hover:border-teal-300'}`}
                                     >
                                         Week {w}{count ? <span className="ml-1 text-[10px] text-teal-600">· {count}</span> : null}
                                     </button>
                                 );
                             })}
                         </div>
+                        {lateWeeksMessage && (
+                            <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                                <p className="text-xs text-red-600">{lateWeeksMessage}</p>
+                            </div>
+                        )}
                         {exercises.length === 0 && (
                             <p className="text-xs text-amber-600 mb-3">No exercises in the library yet. Add some on the Exercises page first.</p>
                         )}
