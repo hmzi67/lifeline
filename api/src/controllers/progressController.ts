@@ -76,7 +76,11 @@ export const getCaloriesIntake = async (req: Request, res: Response) => {
     // and cheat-day meals.
     const days = { gte: firstDay, lte: lastDay };
     const [mealLogs, foodLogs, cheatMeals] = await Promise.all([
-      prisma.dietMealLog.findMany({ where: { userId, date: days }, select: { calories: true, mealId: true, date: true } }),
+      prisma.dietMealLog.findMany({
+        where: { userId, date: days },
+        // The meal's macros, entered in the admin, so plan meals count in the protein/carbs/fat split.
+        select: { calories: true, mealId: true, date: true, meal: { select: { protein: true, carbs: true, fats: true } } },
+      }),
       prisma.foodLog.findMany({
         where: { userId, date: days },
         select: { calories: true, protein: true, carbs: true, fat: true, date: true },
@@ -99,7 +103,8 @@ export const getCaloriesIntake = async (req: Request, res: Response) => {
       + sum(foodLogs.filter((log) => log.date.toISOString().slice(0, 10) === key).map((log) => log.calories))
       + sum(cheatMeals.filter((meal) => meal.loggedAt && localKey(meal.loggedAt) === key).map((meal) => meal.calories));
     const loggedMealIds = mealLogs.map((log) => log.mealId);
-    const withMacros = [...foodLogs, ...cheatMeals];
+    const planMealMacros = mealLogs.map((log) => ({ protein: log.meal?.protein ?? null, carbs: log.meal?.carbs ?? null, fat: log.meal?.fats ?? null }));
+    const withMacros = [...foodLogs, ...cheatMeals, ...planMealMacros];
     const macros = {
       protein: round1(sum(withMacros.map((log) => log.protein))),
       carbs: round1(sum(withMacros.map((log) => log.carbs))),

@@ -451,20 +451,24 @@ export const deleteDietPlan = async (req: Request<{ id: string }>, res: Response
     }
 
     // Days, meals and user links reference the plan without ON DELETE CASCADE, so a
-    // bare delete fails on the foreign keys. Refuse while users or challenges still
-    // use the plan; otherwise remove the plan's own content with it.
-    const [userCount, challengeCount] = await Promise.all([
+    // bare delete fails on the foreign keys. Refuse while users follow it, have saved it,
+    // or a challenge uses it (deleting would silently take it from them); otherwise
+    // remove the plan's own days and meals with it.
+    const [activeCount, savedCount, challengeCount] = await Promise.all([
       prisma.userActiveDietPlan.count({ where: { dietId: id } }),
+      prisma.userDietPlan.count({ where: { dietId: id } }),
       prisma.challengeDiet.count({ where: { dietId: id } }),
     ]);
-    if (userCount > 0 || challengeCount > 0) {
+    if (activeCount > 0 || savedCount > 0 || challengeCount > 0) {
+      const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
       const usedBy = [
-        userCount > 0 ? `${userCount} user${userCount === 1 ? '' : 's'}` : null,
-        challengeCount > 0 ? `${challengeCount} challenge${challengeCount === 1 ? '' : 's'}` : null,
-      ].filter(Boolean).join(' and ');
+        activeCount > 0 ? `followed by ${plural(activeCount, 'user')}` : null,
+        savedCount > 0 ? `saved by ${plural(savedCount, 'user')}` : null,
+        challengeCount > 0 ? `used in ${plural(challengeCount, 'challenge')}` : null,
+      ].filter(Boolean).join(', ');
       res.status(409).json({
         success: false,
-        message: `This diet plan is in use by ${usedBy} and can't be deleted.`
+        message: `This diet plan is ${usedBy}, so it can't be deleted.`
       });
       return;
     }
@@ -472,7 +476,6 @@ export const deleteDietPlan = async (req: Request<{ id: string }>, res: Response
     await prisma.$transaction([
       prisma.dietPlanMeal.deleteMany({ where: { day: { dietId: id } } }),
       prisma.dietPlanDay.deleteMany({ where: { dietId: id } }),
-      prisma.userDietPlan.deleteMany({ where: { dietId: id } }),
       prisma.dietPlan.delete({ where: { id } }),
     ]);
 

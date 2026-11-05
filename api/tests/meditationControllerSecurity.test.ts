@@ -79,10 +79,12 @@ describe('meditation controller data security', () => {
       response as any,
     );
 
+    // Only the meditation and its sessions' ids and lengths (for `duration`); no user data.
     expect(mockPrisma.meditation.findUnique).toHaveBeenCalledWith({
       where: { id: 'meditation-one' },
+      include: { meditationSessions: { select: { id: true, durationMinutes: true }, orderBy: { durationMinutes: 'asc' } } },
     });
-    expect(response.body.data).toEqual({ id: 'meditation-one' });
+    expect(response.body.data).toEqual({ id: 'meditation-one', duration: null });
   });
 
   it('does not load other users favorites with meditation session lists', async () => {

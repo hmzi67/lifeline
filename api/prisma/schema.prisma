@@ -330,7 +330,11 @@ model DietPlanMeal {
   mealTypeId   String        @map("meal_type_id")
   name         String        @db.VarChar(100)
   calories     Int?
-  portionSize  String?       @map("portion_size") @db.VarChar(50)
+  portionSize  String?       @map("portion_size") @db.VarChar(150)
+  /// Grams per serving, as entered in the admin.
+  protein      Float?
+  carbs        Float?
+  fats         Float?
   image        String?       @db.Text
   recipe       String?       @db.Text
   day          DietPlanDay   @relation(fields: [dayId], references: [id])

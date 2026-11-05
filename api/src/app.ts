@@ -60,6 +60,8 @@ import subscriptionPaymentRoutes from './routes/subscriptionPaymentRoutes.js';
 import subscriptionRoutes from './routes/subscriptionRoutes.js';
 import pricingPlanRoutes from './routes/pricingPlanRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
+import imageRoutes from './routes/imageRoutes.js';
+import versionUploadUrls from './middleware/versionUploadUrls.js';
 import userActiveDietPlanRoutes from './routes/userActiveDietPlanRoutes.js';
 import userActiveExercisePlanRoutes from './routes/userActiveExercisePlanRoutes.js';
 import userDailyRoutes from './routes/userDailyRoutineRoutes.js';
@@ -72,6 +74,7 @@ import userFavoriteExercisePlanRoutes from './routes/userFavoriteExercisePlanRou
 import userFavoriteSleepItemRoutes from './routes/userFavoriteSleepItemRoutes.js';
 import meditationLogRoutes from './routes/meditationLogRoutes.js';
 import adminDashboardRoutes from './routes/adminDashboardRoutes.js';
+import adminNotificationRoutes from './routes/adminNotificationRoutes.js';
 import userRoute from './routes/userRoutes.js';
 import userWaterGoalRoutes from './routes/userWaterGoalRoutes.js';
 import waterIntakeRoutes from './routes/waterIntakeRoutes.js';
@@ -86,6 +89,8 @@ app.set('trust proxy', 1);
 // Security middlewares (should be first)
 app.use(helmet);
 app.use(hideInternalErrors);
+// Upload links in JSON carry ?v=<file time>, so a replaced image gets a new link on phones.
+app.use(versionUploadUrls);
 
 // Request processing middlewares
 app.use(compression);
@@ -97,6 +102,9 @@ app.use('/api/user', express.json({ limit: '10mb' }));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use('/uploads', ...serveUploads());
+// Resized copies of uploaded images. Mounted with the static uploads, before sessions and the
+// rate limit: one screen asks for dozens, and each size is rendered only once.
+app.use('/api/img', imageRoutes);
 
 // Session middleware for Passport
 app.use(
@@ -139,6 +147,7 @@ app.use('/api/auth/', authRoute);
 
 // Admin dashboard route
 app.use('/api/admin/dashboard', adminDashboardRoutes);
+app.use('/api/admin/notifications', adminNotificationRoutes);
 
 // media upload route
 app.use('/api/uploads', uploadRoutes);

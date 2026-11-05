@@ -27,6 +27,9 @@ interface PaginationQuery {
 interface ListQuery extends PaginationQuery {
   userId?: Id;
   date?: string; // YYYY-MM-DD or ISO
+  startDate?: string; // YYYY-MM-DD, inclusive
+  endDate?: string; // YYYY-MM-DD, inclusive
+  order?: string; // 'asc' | 'desc' (default)
 }
 
 class WaterIntakeController {
@@ -123,7 +126,7 @@ class WaterIntakeController {
     res: Response
   ): Promise<void> {
     try {
-      const { date, page = "1", limit = "10" } = req.query;
+      const { date, startDate, endDate, order, page = "1", limit = "10" } = req.query;
       const pageNum = Number.parseInt(page, 10) || 1;
       const limitNum = Math.min(500, Math.max(1, Number.parseInt(limit, 10) || 10));
       const skip = (pageNum - 1) * limitNum;
@@ -135,6 +138,16 @@ class WaterIntakeController {
         const start = new Date(String(date).slice(0, 10));
         const end = new Date(start.getTime() + 86400000);
         where.date = { gte: start, lt: end };
+      } else if (startDate || endDate) {
+        // Whole days, both ends included.
+        const range: Prisma.DateTimeFilter = {};
+        if (startDate) range.gte = new Date(String(startDate).slice(0, 10));
+        if (endDate) range.lt = new Date(new Date(String(endDate).slice(0, 10)).getTime() + 86400000);
+        if (Object.values(range).some(d => Number.isNaN((d as Date).getTime()))) {
+          res.status(400).json({ success: false, message: "startDate and endDate must be YYYY-MM-DD" });
+          return;
+        }
+        where.date = range;
       }
 
       const [waterIntakes, totalCount] = await Promise.all([
@@ -142,8 +155,9 @@ class WaterIntakeController {
           where,
           skip,
           take: limitNum,
+          // order=asc gives the oldest first (e.g. limit=1 for the first log ever).
           orderBy: {
-            date: "desc",
+            date: order === "asc" ? "asc" : "desc",
           },
           include: {
             user: {

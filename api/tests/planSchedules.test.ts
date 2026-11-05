@@ -109,7 +109,7 @@ describe('diet plan schedule', () => {
 
   it.each([
     [{ days: [{ dayNumber: 1, meals: [meal({ name: 'x'.repeat(101) })] }] }, 'Meal names must be 100 characters or fewer'],
-    [{ days: [{ dayNumber: 1, meals: [meal({ portionSize: 'p'.repeat(51) })] }] }, 'Portion size must be 50 characters or fewer'],
+    [{ days: [{ dayNumber: 1, meals: [meal({ portionSize: 'p'.repeat(151) })] }] }, 'Portion size must be 150 characters or fewer'],
     [{ days: [{ dayNumber: 2, meals: [] }, { dayNumber: 2, meals: [] }] }, 'Day 2 appears twice'],
   ])('rejects invalid input with a clear message', async (body, message) => {
     const res = mockResponse();

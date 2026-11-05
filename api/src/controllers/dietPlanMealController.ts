@@ -93,8 +93,8 @@ export const createDietPlanMeal = async (req: Request, res: Response): Promise<v
       res.status(400).json({ success: false, message: 'Meal name must be 100 characters or fewer' });
       return;
     }
-    if (portionSize && String(portionSize).length > 50) {
-      res.status(400).json({ success: false, message: 'Portion size must be 50 characters or fewer' });
+    if (portionSize && String(portionSize).length > 150) {
+      res.status(400).json({ success: false, message: 'Portion size must be 150 characters or fewer' });
       return;
     }
 

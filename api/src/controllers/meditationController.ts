@@ -3,6 +3,26 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+/** Minutes, from the admin form: a whole number 1-600, or null to clear. undefined when not sent. */
+const parseDuration = (value: unknown): number | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const minutes = Number(value);
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 600) throw new Error('Duration must be a whole number of minutes between 1 and 600');
+  return minutes;
+};
+
+const optionalText = (value: unknown): string | null | undefined =>
+  value === undefined ? undefined : typeof value === 'string' && value.trim() ? value.trim() : null;
+
+// The app shows a meditation's length and favourites it through its sessions; expose the
+// shortest session's length as `duration` so lists don't need the sessions themselves.
+const SESSION_SUMMARY = { meditationSessions: { select: { id: true, durationMinutes: true }, orderBy: { durationMinutes: 'asc' as const } } };
+const withDuration = <T extends { meditationSessions?: { durationMinutes: number | null }[] }>({ meditationSessions, ...meditation }: T) => ({
+  ...meditation,
+  duration: meditationSessions?.find(session => session.durationMinutes != null)?.durationMinutes ?? null,
+});
+
 export const createMeditation = async (req: Request, res: Response) => {
   try {
     const { name, type, soundUrl } = req.body;
@@ -14,17 +34,29 @@ export const createMeditation = async (req: Request, res: Response) => {
       });
     }
 
+    let durationMinutes: number | null | undefined;
+    try {
+      durationMinutes = parseDuration(req.body.durationMinutes);
+    } catch (e) {
+      return res.status(400).json({ success: false, message: (e as Error).message });
+    }
+
+    // Favourites and the player work through a session, so every meditation gets one.
     const meditation = await prisma.meditation.create({
       data: {
         name,
         type,
-        soundUrl
-      }
+        soundUrl,
+        description: optionalText(req.body.description) ?? null,
+        image: optionalText(req.body.image) ?? null,
+        meditationSessions: { create: { durationMinutes: durationMinutes ?? null } },
+      },
+      include: SESSION_SUMMARY,
     });
 
     res.status(201).json({
       success: true,
-      data: meditation,
+      data: withDuration(meditation),
       message: 'Meditation created successfully'
     });
   } catch (error) {
@@ -39,7 +71,7 @@ export const createMeditation = async (req: Request, res: Response) => {
 export const getMeditations = async (req: Request, res: Response) => {
   try {
     const { type, limit, offset } = req.query;
-    
+
     const where = type ? { type: type as string } : {};
     const take = limit ? parseInt(limit as string) : undefined;
     const skip = offset ? parseInt(offset as string) : undefined;
@@ -50,14 +82,15 @@ export const getMeditations = async (req: Request, res: Response) => {
       skip,
       orderBy: {
         name: 'asc'
-      }
+      },
+      include: SESSION_SUMMARY,
     });
 
     const total = await prisma.meditation.count({ where });
-    
+
     res.json({
       success: true,
-      data: meditations,
+      data: meditations.map(withDuration),
       count: meditations.length,
       total
     });
@@ -80,12 +113,13 @@ export const getMeditationsByType = async (req: Request, res: Response) => {
       },
       orderBy: {
         name: 'asc'
-      }
+      },
+      include: SESSION_SUMMARY,
     });
-    
+
     res.json({
       success: true,
-      data: meditations,
+      data: meditations.map(withDuration),
       count: meditations.length
     });
   } catch (error) {
@@ -102,9 +136,10 @@ export const getMeditationById = async (req: Request, res: Response) => {
     const { id } = req.params;
 
     const meditation = await prisma.meditation.findUnique({
-      where: { id }
+      where: { id },
+      include: SESSION_SUMMARY,
     });
-    
+
     if (!meditation) {
       return res.status(404).json({
         success: false,
@@ -114,7 +149,7 @@ export const getMeditationById = async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      data: meditation
+      data: withDuration(meditation)
     });
   } catch (error) {
     console.error('Error fetching meditation:', error);
@@ -130,11 +165,18 @@ export const updateMeditation = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { name, type, soundUrl } = req.body;
 
+    let durationMinutes: number | null | undefined;
+    try {
+      durationMinutes = parseDuration(req.body.durationMinutes);
+    } catch (e) {
+      return res.status(400).json({ success: false, message: (e as Error).message });
+    }
+
     // Check if meditation exists
     const existingMeditation = await prisma.meditation.findUnique({
       where: { id }
     });
-    
+
     if (!existingMeditation) {
       return res.status(404).json({
         success: false,
@@ -142,18 +184,32 @@ export const updateMeditation = async (req: Request, res: Response) => {
       });
     }
 
-    const meditation = await prisma.meditation.update({
-      where: { id },
-      data: {
-        name: name || existingMeditation.name,
-        type: type || existingMeditation.type,
-        soundUrl: soundUrl || existingMeditation.soundUrl
+    const description = optionalText(req.body.description);
+    const image = optionalText(req.body.image);
+    const meditation = await prisma.$transaction(async tx => {
+      await tx.meditation.update({
+        where: { id },
+        data: {
+          name: name || existingMeditation.name,
+          type: type || existingMeditation.type,
+          soundUrl: soundUrl || existingMeditation.soundUrl,
+          ...(description !== undefined ? { description } : {}),
+          ...(image !== undefined ? { image } : {}),
+        }
+      });
+      // The length lives on the session; one is created if the meditation never had any.
+      const session = await tx.meditationSession.findFirst({ where: { meditationId: id }, orderBy: { durationMinutes: 'asc' } });
+      if (!session) {
+        await tx.meditationSession.create({ data: { meditationId: id, durationMinutes: durationMinutes ?? null } });
+      } else if (durationMinutes !== undefined) {
+        await tx.meditationSession.update({ where: { id: session.id }, data: { durationMinutes } });
       }
+      return tx.meditation.findUniqueOrThrow({ where: { id }, include: SESSION_SUMMARY });
     });
 
     res.json({
       success: true,
-      data: meditation,
+      data: withDuration(meditation),
       message: 'Meditation updated successfully'
     });
   } catch (error) {
@@ -173,7 +229,7 @@ export const deleteMeditation = async (req: Request, res: Response) => {
     const existingMeditation = await prisma.meditation.findUnique({
       where: { id }
     });
-    
+
     if (!existingMeditation) {
       return res.status(404).json({
         success: false,
@@ -193,9 +249,24 @@ export const deleteMeditation = async (req: Request, res: Response) => {
       });
     }
 
-    await prisma.meditation.delete({
-      where: { id }
-    });
+    const [favouriteCount, logCount] = await Promise.all([
+      prisma.userFavoriteMeditation.count({ where: { session: { meditationId: id } } }),
+      prisma.userMeditationLog.count({ where: { meditationId: id } }),
+    ]);
+    if (favouriteCount > 0 || logCount > 0) {
+      return res.status(409).json({
+        success: false,
+        message: favouriteCount > 0
+          ? `Cannot delete meditation. ${favouriteCount} user${favouriteCount === 1 ? ' has' : 's have'} it in their favourites.`
+          : `Cannot delete meditation. Users have listened to it ${logCount} time${logCount === 1 ? '' : 's'}, and that history would be lost.`
+      });
+    }
+
+    // Sessions reference the meditation without ON DELETE CASCADE.
+    await prisma.$transaction([
+      prisma.meditationSession.deleteMany({ where: { meditationId: id } }),
+      prisma.meditation.delete({ where: { id } }),
+    ]);
 
     res.json({
       success: true,

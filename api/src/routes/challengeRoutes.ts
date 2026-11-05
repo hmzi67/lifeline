@@ -17,6 +17,7 @@ import {
     submitChallenge,
     updateChallenge,
 } from '../controllers/challengeController.js';
+import { setChallengeContent } from '../controllers/challengeContentController.js';
 import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
 
@@ -62,6 +63,11 @@ challengeRoute.post('/', authenticate, authorize(['admin']), createChallenge);
 // @desc    Update challenge
 // @access  Private (add authentication middleware as needed)
 challengeRoute.put('/:id', authenticate, authorize(['admin']), updateChallenge);
+
+// @route   PUT /api/challenges/:id/content
+// @desc    Set a challenge's exercises and diet plans
+// @access  Admin
+challengeRoute.put('/:id/content', authenticate, authorize(['admin']), setChallengeContent);
 
 // @route   DELETE /api/challenges/:id
 // @desc    Delete challenge

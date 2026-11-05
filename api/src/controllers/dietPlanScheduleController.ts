@@ -10,7 +10,11 @@ const mealSchema = z.object({
   mealTypeId: z.string().trim().min(1, 'Every meal needs a meal type'),
   name: z.string().trim().min(1, 'Every meal needs a name').max(100, 'Meal names must be 100 characters or fewer'),
   calories: z.coerce.number().int().min(0).max(10000).optional().nullable(),
-  portionSize: z.string().trim().max(50, 'Portion size must be 50 characters or fewer').optional().nullable(),
+  portionSize: z.string().trim().max(150, 'Portion size must be 150 characters or fewer').optional().nullable(),
+  // Grams per serving.
+  protein: z.coerce.number().min(0).max(1000).optional().nullable(),
+  carbs: z.coerce.number().min(0).max(1000).optional().nullable(),
+  fats: z.coerce.number().min(0).max(1000).optional().nullable(),
   image: z.string().trim().max(2000).optional().nullable(),
   recipe: z.string().max(20000).optional().nullable(),
 });
@@ -114,6 +118,9 @@ export const saveDietPlanSchedule = async (req: Request, res: Response): Promise
             name: meal.name,
             calories: meal.calories ?? null,
             portionSize: meal.portionSize || null,
+            protein: meal.protein ?? null,
+            carbs: meal.carbs ?? null,
+            fats: meal.fats ?? null,
             image: meal.image || null,
             recipe: meal.recipe || null,
           };

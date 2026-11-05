@@ -109,8 +109,8 @@ describe('catalog mutation route security', () => {
     const adminLayers = mutationLayers.filter((layer) => !userLayers.includes(layer));
 
     expect(userLayers).toHaveLength(7);
-    // create, update, delete, approve/reject and resolve reports
-    expect(adminLayers).toHaveLength(5);
+    // create, update, set exercises/diets, delete, approve/reject and resolve reports
+    expect(adminLayers).toHaveLength(6);
     for (const layer of userLayers) {
       expect(layer.route!.stack[0].handle).toBe(mockAuthenticate);
       expect(layer.route!.stack.map((entry) => entry.handle)).not.toContain(mockAdminAuthorization);

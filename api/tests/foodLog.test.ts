@@ -73,6 +73,21 @@ describe('calorie intake', () => {
     expect(res.body.data.macros).toEqual({ protein: 5, carbs: 30, fat: 8 });
   });
 
+  it("adds a checked-off plan meal's macros to the protein/carbs/fat split", async () => {
+    mockPrisma.dietMealLog.findMany.mockResolvedValue([
+      { calories: 400, mealId: 'm1', meal: { protein: 30, carbs: 40, fats: 12.5 } },
+      // A meal saved before macros existed adds calories only.
+      { calories: 300, mealId: 'm2', meal: { protein: null, carbs: null, fats: null } },
+    ]);
+    mockPrisma.foodLog.findMany.mockResolvedValue([{ calories: 210, protein: 5, carbs: 30, fat: 8 }]);
+    mockPrisma.userActiveDietPlan.findFirst.mockResolvedValue(null);
+    const res = createResponse();
+
+    await getCaloriesIntake(request, res);
+
+    expect(res.body.data.macros).toEqual({ protein: 35, carbs: 70, fat: 20.5 });
+  });
+
   it('still counts logged food without an active diet plan', async () => {
     mockPrisma.dietMealLog.findMany.mockResolvedValue([]);
     mockPrisma.foodLog.findMany.mockResolvedValue([{ calories: 350, protein: null, carbs: null, fat: null }]);
