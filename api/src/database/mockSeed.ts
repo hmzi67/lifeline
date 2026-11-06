@@ -526,7 +526,7 @@ async function seedActiveDietPlans(userIds: string[], dietPlanIds: string[]) {
   const created = [];
   for (let i = 0; i < Math.min(userIds.length, dietPlanIds.length, 3); i++) {
     if (!userIds[i] || !dietPlanIds[i]) continue;
-    let adp = await prisma.userActiveDietPlan.findFirst({ where: { userId: userIds[i] } });
+    let adp = await prisma.userActiveDietPlan.findFirst({ where: { userId: userIds[i], endedAt: null } });
     if (!adp) adp = await prisma.userActiveDietPlan.create({ data: { userId: userIds[i], dietId: dietPlanIds[i], currentDay: 1, startedAt: new Date('2026-03-01') } });
     created.push(adp);
     console.log(`  active diet plan for ${userIds[i]} → ${adp.id}`);
@@ -895,7 +895,7 @@ async function seedProgressDashboardDataForUser(userId: string, exercisePlanIds:
 
   const dietPlanId = dietPlanIds[0];
   if (dietPlanId) {
-    const activeDiet = await prisma.userActiveDietPlan.findFirst({ where: { userId } });
+    const activeDiet = await prisma.userActiveDietPlan.findFirst({ where: { userId, endedAt: null } });
     if (!activeDiet) {
       await prisma.userActiveDietPlan.create({
         data: {

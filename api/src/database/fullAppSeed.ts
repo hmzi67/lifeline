@@ -617,7 +617,7 @@ async function ensureDemoAndExistingUsers(dietPlanId: string, exercisePlanId: st
   });
 
   for (const user of users) {
-    const activeDiet = await prisma.userActiveDietPlan.findFirst({ where: { userId: user.id } });
+    const activeDiet = await prisma.userActiveDietPlan.findFirst({ where: { userId: user.id, endedAt: null } });
     if (!activeDiet) {
       await prisma.userActiveDietPlan.create({
         data: { userId: user.id, dietId: dietPlanId, currentDay: 1, startedAt: dayDate(-1) },

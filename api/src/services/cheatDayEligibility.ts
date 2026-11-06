@@ -20,7 +20,7 @@ export type CheatDayEligibility = {
  */
 export const cheatDayEligibility = async (userId: string, today: string): Promise<CheatDayEligibility> => {
   const plan = await prisma.userActiveDietPlan.findFirst({
-    where: { userId },
+    where: { userId, endedAt: null },
     orderBy: { startedAt: 'desc' },
     include: { diet: { include: { dietPlanDays: { include: { _count: { select: { dietPlanMeals: true } } } } } } },
   });

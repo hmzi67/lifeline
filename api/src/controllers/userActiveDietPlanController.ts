@@ -1,7 +1,15 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { Request, Response } from 'express';
 
 const prisma = new PrismaClient();
+
+/** The user's current plan: the one not ended. A unique index keeps it to one per user. */
+const openPlanWhere = (userId: string) => ({ userId, endedAt: null });
+
+const planInclude = {
+  user: { select: { id: true, email: true, username: true } },
+  diet: true,
+} as const;
 
 // Get user's active diet plan
 export const getUserActiveDietPlan = async (req: Request, res: Response): Promise<void> => {
@@ -9,9 +17,8 @@ export const getUserActiveDietPlan = async (req: Request, res: Response): Promis
     const { userId } = req.params;
 
     const activePlan = await prisma.userActiveDietPlan.findFirst({
-      where: { 
-        userId
-      },
+      where: openPlanWhere(userId),
+      orderBy: { startedAt: 'desc' },
       include: {
         user: {
           select: {
@@ -66,6 +73,8 @@ export const getUserActiveDietPlan = async (req: Request, res: Response): Promis
 export const startActiveDietPlan = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId, dietId, currentDay } = req.body;
+    // The app sends this after the user agreed to deactivate their current plan.
+    const replaceActive = req.body?.replaceActive === true;
 
     if (!userId || !dietId) {
       res.status(400).json({
@@ -101,39 +110,53 @@ export const startActiveDietPlan = async (req: Request, res: Response): Promise<
       return;
     }
 
-    // Check if user already has an active diet plan
+    // One plan at a time (paused plans count: they can be resumed).
     const existingActivePlan = await prisma.userActiveDietPlan.findFirst({
-      where: {
-        userId,
-        pausedAt: null
-      }
+      where: openPlanWhere(userId),
+      orderBy: { startedAt: 'desc' },
+      include: { diet: { select: { id: true, name: true } } },
     });
 
-    if (existingActivePlan) {
-      res.status(400).json({
+    if (existingActivePlan && existingActivePlan.dietId === dietId) {
+      // Already following this plan: nothing to start.
+      const plan = await prisma.userActiveDietPlan.findUnique({ where: { id: existingActivePlan.id }, include: planInclude });
+      res.status(200).json({ success: true, data: plan, message: 'This diet plan is already active' });
+      return;
+    }
+
+    if (existingActivePlan && !replaceActive) {
+      res.status(409).json({
         success: false,
-        message: 'User already has an active diet plan. Please pause it first.'
+        code: 'ACTIVE_DIET_PLAN_EXISTS',
+        message: `You're already following "${existingActivePlan.diet?.name ?? 'another diet plan'}". Deactivate it to start this one.`,
+        data: {
+          activePlan: {
+            id: existingActivePlan.id,
+            dietId: existingActivePlan.dietId,
+            dietName: existingActivePlan.diet?.name ?? null,
+            currentDay: existingActivePlan.currentDay,
+            startedAt: existingActivePlan.startedAt,
+          },
+        },
       });
       return;
     }
 
-    const activePlan = await prisma.userActiveDietPlan.create({
-      data: {
-        userId,
-        dietId,
-        currentDay: currentDay || 1,
-        startedAt: new Date()
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            username: true
-          }
-        },
-        diet: true
+    // End the old plan and start the new one together, so the user is never left with none or two.
+    const now = new Date();
+    const activePlan = await prisma.$transaction(async (tx) => {
+      if (existingActivePlan) {
+        await tx.userActiveDietPlan.updateMany({ where: openPlanWhere(userId), data: { endedAt: now } });
       }
+      return tx.userActiveDietPlan.create({
+        data: {
+          userId,
+          dietId,
+          currentDay: currentDay || 1,
+          startedAt: now
+        },
+        include: planInclude
+      });
     });
 
     res.status(201).json({
@@ -142,6 +165,15 @@ export const startActiveDietPlan = async (req: Request, res: Response): Promise<
       message: 'Active diet plan started successfully'
     });
   } catch (error) {
+    // Two starts at once: the one-open-plan-per-user index rejects the second.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      res.status(409).json({
+        success: false,
+        code: 'ACTIVE_DIET_PLAN_EXISTS',
+        message: 'You already have an active diet plan. Deactivate it to start this one.'
+      });
+      return;
+    }
     console.error('Error starting active diet plan:', error);
     res.status(500).json({
       success: false,
@@ -165,6 +197,11 @@ export const pauseActiveDietPlan = async (req: Request, res: Response): Promise<
         success: false,
         message: 'Active diet plan not found'
       });
+      return;
+    }
+
+    if (activePlan.endedAt) {
+      res.status(400).json({ success: false, message: 'This diet plan has been deactivated' });
       return;
     }
 
@@ -222,6 +259,11 @@ export const resumeActiveDietPlan = async (req: Request, res: Response): Promise
         success: false,
         message: 'Active diet plan not found'
       });
+      return;
+    }
+
+    if (activePlan.endedAt) {
+      res.status(400).json({ success: false, message: 'This diet plan has been deactivated' });
       return;
     }
 
@@ -313,6 +355,36 @@ export const updateCurrentDay = async (req: Request, res: Response): Promise<voi
     });
   } catch (error) {
     console.error('Error updating current day:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+// Deactivate (end) the plan. Unlike delete, its meal logs stay as history.
+export const endActiveDietPlan = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const activePlan = await prisma.userActiveDietPlan.findUnique({ where: { id } });
+    if (!activePlan) {
+      res.status(404).json({ success: false, message: 'Active diet plan not found' });
+      return;
+    }
+
+    const updatedPlan = activePlan.endedAt
+      ? await prisma.userActiveDietPlan.findUnique({ where: { id }, include: planInclude })
+      : await prisma.userActiveDietPlan.update({ where: { id }, data: { endedAt: new Date() }, include: planInclude });
+
+    res.status(200).json({
+      success: true,
+      data: updatedPlan,
+      message: 'Diet plan deactivated'
+    });
+  } catch (error) {
+    console.error('Error deactivating diet plan:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error',

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
     deleteActiveDietPlan,
+    endActiveDietPlan,
     getUserActiveDietPlan,
     pauseActiveDietPlan,
     resumeActiveDietPlan,
@@ -30,6 +31,9 @@ router.put('/:id/resume', ownsPlan, resumeActiveDietPlan);
 
 // PUT /api/active-diet-plans/:id/current-day - Update current day
 router.put('/:id/current-day', ownsPlan, updateCurrentDay);
+
+// PUT /api/active-diet-plans/:id/end - Deactivate the plan, keeping its meal logs
+router.put('/:id/end', ownsPlan, endActiveDietPlan);
 
 // DELETE /api/active-diet-plans/:id - Delete active diet plan
 router.delete('/:id', ownsPlan, deleteActiveDietPlan);

@@ -145,7 +145,7 @@ const loadDayActivity = async (userId: string, date: string, timeZone: string): 
     prisma.appSetting.findFirst({ where: { key: 'daily_water_goal_ml', scope: 'user' }, select: { value: true } }),
     prisma.dietMealLog.findFirst({ where: { userId, date: dateRange }, select: { id: true } }),
     prisma.foodLog.findFirst({ where: { userId, date: dateRange }, select: { id: true } }),
-    prisma.userActiveDietPlan.findFirst({ where: { userId }, select: { id: true } }),
+    prisma.userActiveDietPlan.findFirst({ where: { userId, endedAt: null }, select: { id: true } }),
     prisma.userActiveExercisePlan.findFirst({
       where: { userId, pausedAt: null },
       orderBy: { startedAt: 'desc' },

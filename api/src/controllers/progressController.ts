@@ -113,7 +113,7 @@ export const getCaloriesIntake = async (req: Request, res: Response) => {
 
     // Get user's active diet plan
     const activeDietPlan = await prisma.userActiveDietPlan.findFirst({
-      where: { userId },
+      where: { userId, endedAt: null },
       orderBy: { startedAt: 'desc' },
       include: {
         diet: {
@@ -672,7 +672,7 @@ export const getProgressSummary = async (req: Request, res: Response) => {
     ] = await Promise.all([
       // Active diet plan with meals
       prisma.userActiveDietPlan.findFirst({
-        where: { userId },
+        where: { userId, endedAt: null },
         orderBy: { startedAt: 'desc' },
         include: {
           diet: {

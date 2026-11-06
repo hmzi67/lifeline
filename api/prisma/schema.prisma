@@ -352,10 +352,15 @@ model UserActiveDietPlan {
   currentDay   Int           @map("current_day")
   startedAt    DateTime      @map("started_at")
   pausedAt     DateTime?     @map("paused_at")
+  /// Set when the user deactivates the plan (e.g. to start another). Ended rows keep their
+  /// meal logs as history; only the row with endedAt = null is the user's active plan.
+  /// The migration adds a partial unique index: at most one open plan per user.
+  endedAt      DateTime?     @map("ended_at")
   user         User          @relation(fields: [userId], references: [id])
   diet         DietPlan      @relation(fields: [dietId], references: [id])
   dietMealLogs DietMealLog[]
 
+  @@index([userId, endedAt])
   @@map("user_active_diet_plan")
 }
 
