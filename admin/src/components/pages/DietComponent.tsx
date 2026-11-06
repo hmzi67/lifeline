@@ -273,6 +273,19 @@ const DietComponent: React.FC = () => {
     const totalMeals = filledDays.reduce((sum, d) => sum + mealsByDay[d].length, 0);
     // Days that still have meals after the duration was shortened: shown in red, block saving.
     const lateDays = filledDays.filter(d => d > planDayCount());
+    // The day picker shows one week at a time: 60 day chips at once was too much to scan.
+    const weekCount = Math.ceil(planDayCount() / 7);
+    const activeWeek = Math.min(Math.ceil(activeDay / 7), Math.max(weekCount, 1));
+    const daysOfWeek = (week: number) =>
+        dayNumbers.filter(d => d > (week - 1) * 7 && d <= week * 7);
+    const filledInWeek = (week: number) => daysOfWeek(week).filter(d => (mealsByDay[d]?.length ?? 0) > 0).length;
+    const filledInPlan = filledDays.filter(d => d <= planDayCount()).length;
+    const nextEmptyDay = dayNumbers.find(d => d > activeDay && !(mealsByDay[d]?.length))
+        ?? dayNumbers.find(d => !(mealsByDay[d]?.length));
+    const goToDay = (day: number) => {
+        setActiveDay(day);
+        setCopyFromDay('');
+    };
     const lateDaysMessage = lateDays.length
         ? `Day${lateDays.length === 1 ? '' : 's'} ${lateDays.join(', ')} ${lateDays.length === 1 ? 'has' : 'have'} meals, but the plan is only ${planDayCount()} days long. Increase the duration, or open ${lateDays.length === 1 ? 'that day' : 'those days'} (in red) and remove the meals.`
         : '';
@@ -591,7 +604,7 @@ const DietComponent: React.FC = () => {
                 await api.delete(`/diet-plans/${createdPlanId}`).catch(() => undefined);
             }
             const data = err.response?.data;
-            const msg = data?.message || data?.error?.message || 'Failed to save diet plan.';
+            const msg = data?.message || data?.error?.message || err?.message || 'Failed to save diet plan.';
             setSaveError(msg);
             showToast(msg, 'error');
         } finally {
@@ -886,7 +899,7 @@ const DietComponent: React.FC = () => {
                     <div className="flex items-center gap-2">
                         <Calendar className="w-5 h-5 text-teal-500" />
                         <h3 className="font-bold text-gray-800">Plan Days</h3>
-                        <span className="text-xs text-gray-400">Pick a day, then add that day's meals</span>
+                        <span className="text-xs text-gray-400">Pick a day, then add that day&apos;s meals</span>
                     </div>
                     <div className="flex items-center gap-2">
                         <Select value={copyFromDay} onValueChange={setCopyFromDay}>
@@ -906,33 +919,128 @@ const DietComponent: React.FC = () => {
                 </div>
                 {scheduleState === 'loading' ? (
                     <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
-                        <Loader2 className="w-4 h-4 animate-spin" /> Loading this plan's meals...
+                        <Loader2 className="w-4 h-4 animate-spin" /> Loading this plan&apos;s meals...
                     </div>
                 ) : (
-                    <div className="flex flex-wrap gap-2 max-h-44 overflow-y-auto">
-                        {[...dayNumbers, ...lateDays].map(d => {
-                            const late = d > planDayCount();
-                            const count = mealsByDay[d]?.length || 0;
-                            const active = d === activeDay;
-                            return (
-                                <button
-                                    key={d}
-                                    type="button"
-                                    onClick={() => { setActiveDay(d); setCopyFromDay(''); }}
-                                    className={`px-3 py-1.5 rounded-lg border-2 text-xs font-semibold transition-all
-                                        ${late
-                                            ? `border-red-400 text-red-600 ${active ? 'bg-red-50' : 'hover:bg-red-50'}`
-                                            : active
-                                            ? 'border-teal-500 bg-teal-50 text-teal-700'
-                                            : count
-                                                ? 'border-teal-200 text-gray-700 hover:border-teal-400'
-                                                : 'border-gray-200 text-gray-400 hover:border-teal-300'}`}
+                    <>
+                        {/* Progress across the whole plan */}
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-teal-500 rounded-full transition-all"
+                                    style={{ width: `${Math.round((filledInPlan / planDayCount()) * 100)}%` }}
+                                />
+                            </div>
+                            <span className="text-xs font-semibold text-gray-600 whitespace-nowrap">
+                                {filledInPlan} / {planDayCount()} days filled
+                            </span>
+                        </div>
+
+                        {/* Weeks */}
+                        {weekCount > 1 && (
+                            <div className="flex gap-2 overflow-x-auto pb-2 mb-3">
+                                {Array.from({ length: weekCount }, (_, i) => i + 1).map(week => {
+                                    const days = daysOfWeek(week);
+                                    const filled = filledInWeek(week);
+                                    const complete = filled === days.length;
+                                    const active = week === activeWeek;
+                                    return (
+                                        <button
+                                            key={week}
+                                            type="button"
+                                            onClick={() => goToDay(days[0])}
+                                            className={`flex-shrink-0 px-3 py-2 rounded-xl border-2 text-left transition-all
+                                                ${active
+                                                    ? 'border-teal-500 bg-teal-50'
+                                                    : 'border-gray-200 hover:border-teal-300'}`}
+                                        >
+                                            <div className={`text-xs font-bold flex items-center gap-1 ${active ? 'text-teal-700' : 'text-gray-700'}`}>
+                                                Week {week}
+                                                {complete && <Check className="w-3.5 h-3.5 text-teal-500" />}
+                                            </div>
+                                            <div className="text-[10px] text-gray-400">
+                                                Days {days[0]}–{days[days.length - 1]} · {filled}/{days.length}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Days of the selected week */}
+                        <div className="grid grid-cols-7 gap-2">
+                            {daysOfWeek(activeWeek).map(d => {
+                                const count = mealsByDay[d]?.length || 0;
+                                const active = d === activeDay;
+                                return (
+                                    <button
+                                        key={d}
+                                        type="button"
+                                        onClick={() => goToDay(d)}
+                                        className={`rounded-xl border-2 py-2.5 px-1 text-center transition-all
+                                            ${active
+                                                ? 'border-teal-500 bg-teal-500 text-white shadow-sm'
+                                                : count
+                                                    ? 'border-teal-200 bg-teal-50 text-teal-800 hover:border-teal-400'
+                                                    : 'border-dashed border-gray-300 text-gray-500 hover:border-teal-300'}`}
+                                    >
+                                        <div className="text-sm font-bold">Day {d}</div>
+                                        <div className={`text-[10px] mt-0.5 ${active ? 'text-teal-50' : count ? 'text-teal-600' : 'text-gray-400'}`}>
+                                            {count ? `${count} meal${count === 1 ? '' : 's'}` : 'Empty'}
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Step through days while entering data */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 mt-4">
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => goToDay(activeDay - 1)}
+                                    disabled={activeDay <= 1}
                                 >
-                                    Day {d}{count ? <span className="ml-1 text-[10px] text-teal-600">· {count}</span> : null}
-                                </button>
-                            );
-                        })}
-                    </div>
+                                    <ChevronLeft className="w-4 h-4 mr-1" /> Day {Math.max(activeDay - 1, 1)}
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => goToDay(activeDay + 1)}
+                                    disabled={activeDay >= planDayCount()}
+                                >
+                                    Day {Math.min(activeDay + 1, planDayCount())} <ChevronRight className="w-4 h-4 ml-1" />
+                                </Button>
+                            </div>
+                            {nextEmptyDay && nextEmptyDay !== activeDay && (
+                                <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-teal-600 hover:text-teal-700 hover:bg-teal-50"
+                                    onClick={() => goToDay(nextEmptyDay)}
+                                >
+                                    Next empty day (Day {nextEmptyDay}) <ChevronRight className="w-4 h-4 ml-1" />
+                                </Button>
+                            )}
+                        </div>
+
+                        {/* Days beyond a shortened duration that still hold meals */}
+                        {lateDays.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-3">
+                                {lateDays.map(d => (
+                                    <button
+                                        key={d}
+                                        type="button"
+                                        onClick={() => goToDay(d)}
+                                        className={`px-3 py-1.5 rounded-lg border-2 border-red-400 text-xs font-semibold text-red-600 ${d === activeDay ? 'bg-red-50' : 'hover:bg-red-50'}`}
+                                    >
+                                        Day {d} · {mealsByDay[d]?.length || 0}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </>
                 )}
                 {lateDaysMessage && (
                     <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
@@ -940,8 +1048,8 @@ const DietComponent: React.FC = () => {
                         <p className="text-xs text-red-600">{lateDaysMessage}</p>
                     </div>
                 )}
-                <p className="text-[10px] text-gray-400 mt-2">
-                    {filledDays.filter(d => d <= planDayCount()).length} of {planDayCount()} days have meals. The number of days comes from the plan's duration; days without meals show nothing in the app.
+                <p className="text-[10px] text-gray-400 mt-3">
+                    The number of days comes from the plan&apos;s duration. Days without meals show nothing in the app.
                 </p>
             </SectionCard>
 
@@ -1138,7 +1246,7 @@ const DietComponent: React.FC = () => {
                 {meals.length === 0 ? (
                     <div className="text-center py-10 text-gray-400">
                         <Utensils className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                        <p className="text-sm">No meals for Day {activeDay} yet. Add one above, or copy another day's meals.</p>
+                        <p className="text-sm">No meals for Day {activeDay} yet. Add one above, or copy another day&apos;s meals.</p>
                     </div>
                 ) : (
                     <div className="space-y-3">
