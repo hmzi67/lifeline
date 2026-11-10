@@ -13,7 +13,6 @@ jest.mock('@prisma/client', () => ({
 }));
 jest.mock('../src/services/notificationService', () => ({ notifyUser: jest.fn() }));
 
-const jwt = require('jsonwebtoken') as typeof import('jsonwebtoken');
 const { medicationAdherence } = require('../src/services/medicationAdherence') as typeof import('../src/services/medicationAdherence');
 const { recordIntake } = require('../src/controllers/medicationIntakeController') as typeof import('../src/controllers/medicationIntakeController');
 const { completeChallenge } = require('../src/controllers/challengeController') as typeof import('../src/controllers/challengeController');
@@ -105,12 +104,11 @@ describe('completing a challenge', () => {
 
 describe('weight history', () => {
   it('records a reading for the day whenever the weight is saved', async () => {
-    const token = jwt.sign({ userId: 'user-1', email: 'a@example.test' }, process.env.JWT_SECRET!);
     mockPrisma.questionnaire.findFirst.mockResolvedValue({ id: 'q1' });
     mockPrisma.questionnaire.update.mockResolvedValue({ id: 'q1', weight: 67.5, weightUnit: 'kg' });
     const res = createResponse();
 
-    await updateWeight({ headers: { authorization: `Bearer ${token}` }, body: { weight: 67.5 } } as any, res);
+    await updateWeight({ user: { id: 'user-1' }, body: { weight: 67.5 } } as any, res);
 
     expect(res.statusCode).toBe(200);
     const call = mockPrisma.weightLog.upsert.mock.calls[0][0];
