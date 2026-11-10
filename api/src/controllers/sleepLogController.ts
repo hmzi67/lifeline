@@ -316,8 +316,8 @@ export const deleteSleepLog = async (req: Request, res: Response) => {
       });
     }
 
-    // Verify ownership (allow if userId matches or if log has no owner)
-    if (existingLog.userId && existingLog.userId !== userId) {
+    // An ownerless log belongs to nobody, so nobody may delete it through this endpoint.
+    if (existingLog.userId !== userId) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to delete this sleep log',
