@@ -18,6 +18,8 @@ import {
     signup,
     verify,
 } from '../controllers/authController.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { appleMobileBody, emailBody, googleMobileBody, oauthExchangeBody, refreshTokenBody, resetPasswordBody, verifyEmailBody } from '../validators/accountSchemas.js';
 
 const authRoute = Router();
 
@@ -49,26 +51,26 @@ const otpLimiter = rateLimit({
 // Authentication routes
 authRoute.post('/login', authLimiter, login);
 authRoute.post('/signup', authLimiter, signup);
-authRoute.post('/logout', logout);
-authRoute.post('/refresh-token', refreshToken);
+authRoute.post('/logout', validateBody(refreshTokenBody), logout);
+authRoute.post('/refresh-token', validateBody(refreshTokenBody), refreshToken);
 authRoute.get('/me', getCurrentUser);
 
 // Password reset routes
-authRoute.post('/request-password-reset', otpLimiter, requestPasswordReset);
-authRoute.post('/reset-password', otpLimiter, resetPassword);
+authRoute.post('/request-password-reset', otpLimiter, validateBody(emailBody), requestPasswordReset);
+authRoute.post('/reset-password', otpLimiter, validateBody(resetPasswordBody), resetPassword);
 
 // Verification route
-authRoute.post('/resend-verification', otpLimiter, resendVerificationEmail)
-authRoute.post('/verify', otpLimiter, verify)
+authRoute.post('/resend-verification', otpLimiter, validateBody(emailBody), resendVerificationEmail)
+authRoute.post('/verify', otpLimiter, validateBody(verifyEmailBody), verify)
 authRoute.get('/check-verification', checkVerificationStatus)
 
 // OAuth routes
 authRoute.get('/google', googleAuth);
 authRoute.get('/google/callback', googleAuthCallback);
-authRoute.post('/google/mobile', googleMobileAuth); // Mobile Google authentication
+authRoute.post('/google/mobile', validateBody(googleMobileBody), googleMobileAuth); // Mobile Google authentication
 authRoute.get('/apple', appleAuth);
 // POST /apple/callback is mounted in app.ts, before CORS.
-authRoute.post('/apple/mobile', authLimiter, appleMobileAuth); // Mobile Apple authentication
-authRoute.post('/oauth/exchange', otpLimiter, exchangeOAuthLoginCode); // Web: single-use code from /auth/callback
+authRoute.post('/apple/mobile', authLimiter, validateBody(appleMobileBody), appleMobileAuth); // Mobile Apple authentication
+authRoute.post('/oauth/exchange', otpLimiter, validateBody(oauthExchangeBody), exchangeOAuthLoginCode); // Web: single-use code from /auth/callback
 
 export default authRoute;

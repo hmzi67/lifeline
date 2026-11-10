@@ -43,26 +43,43 @@ describe('validateBody', () => {
   });
 });
 
-// Every write route in these routers runs a body schema before its handler.
-const COVERED_ROUTERS = [
-  'cheatDayRoutes', 'dietMealLogRoutes', 'fastingLogRoutes', 'sleepLogRoutes', 'waterIntakeRoutes',
-  'medicationRoutes', 'medicationReminderRoutes', 'notificationRoutes', 'userFavoriteSleepItemRoutes',
-  'userFavoriteExercisePlanRoutes', 'userFavoriteMeditationRoutes', 'userWaterGoalRoutes',
-  'userExerciseProgressRoutes', 'userActiveDietPlanRoutes', 'userActiveExercisePlanRoutes',
-  'userDietPlanRoutes', 'userExerciseRoutes', 'foodScanRoutes', 'inAppPurchaseRoutes', 'weightLogRoutes',
-  'dietPlanRoutes', 'dietPlanDayRoutes', 'dietPlanMealRoutes', 'exerciseRoutes', 'exerciseDetailRoutes',
-  'exercisePlanRoutes', 'exercisePlanScheduleRoutes', 'exercisePlanWeekRoutes', 'mealTypeRoutes',
-  'meditationRoutes', 'meditationSessionRoutes', 'sleepSoundRoutes', 'sleepStoryRoutes', 'roleRoutes',
-  'appSettingRoutes', 'blogRoutes',
+// Every write route in the API runs a body schema before its handler, unless it is listed
+// below: handlers that parse the body with their own zod schema, and routes with no body.
+const OWN_SCHEMA = [
+  'login', 'signup', 'submitChallenge', 'recordChallengeApplePurchase', 'createChallenge', 'updateChallenge',
+  'setChallengeContent', 'startChallengeCheckout', 'confirmChallengeCheckout', 'reviewChallenge',
+  'reportChallenge', 'resolveChallengeReports', 'addExerciseToChallenge', 'addMultipleExercisesToChallenge',
+  'validateCoupon', 'createCoupon', 'updateCoupon', 'validateReferralCode', 'createReferralCode',
+  'updateReferralCode', 'createPricingPlan', 'updatePricingPlan', 'createSubscriptionPayment',
+  'updateSubscriptionPayment', 'createSubscription', 'confirmSubscriptionPayment', 'createOrUpdateQuestionnaire',
+  'updateOnboardingProgress', 'createFoodLog', 'createMeditationLog', 'recordIntake', 'saveDietPlanSchedule',
+  'saveExercisePlanSchedule',
+  // questionnaireController: each per-field update parses the body with its field schema.
+  'updateHeightData', 'updateWeightData', 'updateGender', 'updateGoal', 'updateDietType', 'updateIsDiabetic',
+  'updateAllergenFood', 'updateFitnessLevel', 'updateTypicalDayType', 'updatePhysicalLimitations',
+  'updateBodyFocusArea', 'updateDateOfBirth', 'updateHeight', 'updateHeightUnit', 'updateWeight',
+  'updateWeightUnit', 'updateGoalWeight', 'updateMotivationFor',
 ];
-// Write routes that take no body, or whose handler validates it with its own zod schema.
-const NO_BODY_OR_OWN_SCHEMA = /\b(recordIntake|toggleMedicationReminder|markAllNotificationsRead|markNotificationRead|pause\w+|resume\w+|end\w+|saveDietPlanSchedule|saveExercisePlanSchedule)\b/;
+const NO_BODY = [
+  'toggleMedicationReminder', 'markAllNotificationsRead', 'markNotificationRead', 'joinChallenge',
+  'completeChallenge', 'startFreeWeekAccess',
+  'pauseActiveDietPlan', 'resumeActiveDietPlan', 'endActiveDietPlan', 'pauseActiveExercisePlan', 'resumeActiveExercisePlan',
+];
+const exempt = new RegExp(`\\b(${[...OWN_SCHEMA, ...NO_BODY].join('|')})\\b`);
+// Inline handlers: the admin broadcast parses broadcastSchema; uploads take a multipart file, not fields.
+const INLINE_EXEMPT: Record<string, string[]> = { adminNotificationRoutes: ["'/broadcast'"], uploadRoutes: ["router.post('/'"] };
+
+const routesDir = path.join(__dirname, '../src/routes');
+const routerFiles = fs.readdirSync(routesDir).filter((file) => file.endsWith('.ts'));
 
 describe('body schema coverage', () => {
-  it.each(COVERED_ROUTERS)('%s validates the body of every write route', (name) => {
-    const source = fs.readFileSync(path.join(__dirname, '../src/routes', `${name}.ts`), 'utf8');
-    const writes = source.split('\n').filter((line) => /\.(post|put|patch)\(/.test(line) && !NO_BODY_OR_OWN_SCHEMA.test(line));
-    expect(writes.length).toBeGreaterThan(0);
+  it.each(routerFiles)('%s validates the body of every write route', (file) => {
+    const name = file.replace(/\.ts$/, '');
+    const source = fs.readFileSync(path.join(routesDir, file), 'utf8');
+    const writes = source
+      .split('\n')
+      .filter((line) => /\.(post|put|patch)\(/.test(line) && !exempt.test(line))
+      .filter((line) => !(INLINE_EXEMPT[name] ?? []).some((marker) => line.includes(marker)));
     for (const line of writes) expect(line).toContain('validateBody(');
   });
 });
