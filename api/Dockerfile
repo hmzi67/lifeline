@@ -22,6 +22,10 @@ RUN npx prisma generate
 # Build TypeScript project
 RUN npm run build
 
+# Runtime is production: errors-only logs, secure session cookie, generic error bodies.
+# Set after the build so npm install above still gets dev dependencies.
+ENV NODE_ENV=production
+
 # Create runtime directories
 RUN mkdir -p uploads logs
 

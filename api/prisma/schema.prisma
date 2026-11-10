@@ -26,24 +26,36 @@ model Role {
 
 // Users Table
 model User {
-  id              String   @id @default(cuid())
-  email           String   @unique @db.VarChar(255)
-  username        String?  @unique @db.VarChar(100)
-  googleId        String?  @unique @map("google_id") @db.VarChar(255)
-  profileImage    String?  @map("profile_image") @db.Text
-  isEmailVerified Boolean  @default(false) @map("is_email_verified")
-  subject         String?  @db.VarChar(255)
-  password        String?  @db.VarChar(255)
-  otp             String?  @db.VarChar(20)
-  status          String?  @db.VarChar(20)
-  trialUsedAt     DateTime? @map("trial_used_at")
-  roleId          String?  @map("role_id")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id                   String    @id @default(cuid())
+  email                String    @unique @db.VarChar(255)
+  username             String?   @unique @db.VarChar(100)
+  displayName          String?   @map("display_name") @db.VarChar(100)
+  googleId             String?   @unique @map("google_id") @db.VarChar(255)
+  appStoreAccountToken String?   @unique @map("app_store_account_token") @db.VarChar(36)
+  /// Sign in with Apple refresh token (AES-GCM encrypted), revoked when the account is deleted.
+  appleRefreshToken    String?   @map("apple_refresh_token") @db.Text
+  /// The client_id (bundle ID or Services ID) the Apple token was issued to.
+  appleClientId        String?   @map("apple_client_id") @db.VarChar(255)
+  profileImage         String?   @map("profile_image") @db.Text
+  phone                String?   @db.VarChar(30)
+  isEmailVerified      Boolean   @default(false) @map("is_email_verified")
+  subject              String?   @unique @db.VarChar(255)
+  password             String?   @db.VarChar(255)
+  otp                  String?   @db.VarChar(20)
+  otpPurpose           String?   @map("otp_purpose") @db.VarChar(20)
+  otpExpiresAt         DateTime? @map("otp_expires_at")
+  otpAttempts          Int       @default(0) @map("otp_attempts")
+  status               String?   @db.VarChar(20)
+  trialUsedAt          DateTime? @map("trial_used_at")
+  roleId               String?   @map("role_id")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
 
   role                    Role?                    @relation(fields: [roleId], references: [id])
   authTokens              AuthToken[]
   refreshTokens           RefreshToken[]
+  oauthLoginCodes         OauthLoginCode[]
+  onboardingProgress      OnboardingProgress?
   subscriptionPayments    SubscriptionPayment[]
   userLicenses            UserLicense[]
   questionnaires          Questionnaire[]
@@ -64,13 +76,21 @@ model User {
   medicationReminders     MedicationReminder[]
   userDailyRoutines       UserDailyRoutine[]
   userFavoriteMeditations UserFavoriteMeditation[]
+  userFavoriteExercisePlans UserFavoriteExercisePlan[]
+  userFavoriteSleepItems    UserFavoriteSleepItem[]
   blogs                   Blog[]
   blogComments            BlogComment[]
   submittedChallenges     Challenge[]              @relation("SubmittedChallenges")
-  createdCoupons          CouponCode[]    @relation("AdminCreatedCoupons")
+  challengeReports        ChallengeReport[]        @relation("ChallengeReports")
+  createdCoupons          CouponCode[]             @relation("AdminCreatedCoupons")
   couponUsages            CouponUsage[]
-  referralCodes           ReferralCode[]  @relation("ReferralCodeOwner")
+  referralCodes           ReferralCode[]           @relation("ReferralCodeOwner")
   referralUsages          ReferralUsage[]
+  notifications           Notification[]
+  foodLogs                FoodLog[]
+  medicationIntakes       MedicationIntake[]
+  weightLogs              WeightLog[]
+  meditationLogs          UserMeditationLog[]
 
   @@map("users")
 }
@@ -93,14 +113,52 @@ model AuthToken {
 
 // Refresh Tokens Table
 model RefreshToken {
-  id        String   @id @default(cuid())
-  userId    String   @map("user_id")
-  token     String   @unique @db.Text
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
-  user      User     @relation(fields: [userId], references: [id])
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  token        String   @unique @db.Text
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  /// The token issued when this one was refreshed. This one stays valid until that
+  /// replacement is first used, so a refresh reply lost in transit doesn't sign the user out.
+  replacedById String?  @map("replaced_by_id")
+  user         User     @relation(fields: [userId], references: [id])
 
+  @@index([replacedById])
   @@map("refresh_tokens")
+}
+
+// Single-use code handed to the browser after a web Google/Apple sign-in, so
+// no token ever appears in a URL. The browser trades it, together with the
+// httpOnly binding cookie set alongside it, for a session via
+// POST /auth/oauth/exchange. Only SHA-256 hashes are stored.
+model OauthLoginCode {
+  id          String   @id @default(cuid())
+  codeHash    String   @unique @map("code_hash") @db.VarChar(64)
+  bindingHash String   @map("binding_hash") @db.VarChar(64)
+  userId      String   @map("user_id")
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("oauth_login_codes")
+}
+
+// Server-owned onboarding resume state. Questionnaire answers remain in the
+// questionnaires table; this record stores navigation-only state.
+model OnboardingProgress {
+  id                String    @id @default(cuid())
+  userId            String    @unique @map("user_id")
+  lastRoute         String?   @map("last_route") @db.VarChar(255)
+  pricingPlanId     String?   @map("pricing_plan_id") @db.VarChar(191)
+  isComplete        Boolean   @default(false) @map("is_complete")
+  visitedGenderInfo Boolean   @default(false) @map("visited_gender_info")
+  completedAt       DateTime? @map("completed_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("onboarding_progress")
 }
 
 // ============================
@@ -109,19 +167,20 @@ model RefreshToken {
 
 // Pricing Plans Table
 model PricingPlan {
-  id              String   @id @default(cuid())
-  name            String   @db.VarChar(100)
-  description     String?  @db.Text
-  price           Decimal  @db.Decimal(10, 2)
-  originalPrice   Decimal? @map("original_price") @db.Decimal(10, 2)
-  durationMonths  Int      @map("duration_months")
-  trialDays       Int      @default(0) @map("trial_days")
-  features        String[] @db.Text
-  isActive        Boolean  @default(true) @map("is_active")
-  isHighlighted   Boolean  @default(false) @map("is_highlighted")
-  sortOrder       Int      @default(0) @map("sort_order")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id                   String                @id @default(cuid())
+  name                 String                @db.VarChar(100)
+  description          String?               @db.Text
+  price                Decimal               @db.Decimal(10, 2)
+  originalPrice        Decimal?              @map("original_price") @db.Decimal(10, 2)
+  appleProductId       String?               @unique @map("apple_product_id") @db.VarChar(255)
+  durationMonths       Int                   @map("duration_months")
+  trialDays            Int                   @default(0) @map("trial_days")
+  features             String[]              @db.Text
+  isActive             Boolean               @default(true) @map("is_active")
+  isHighlighted        Boolean               @default(false) @map("is_highlighted")
+  sortOrder            Int                   @default(0) @map("sort_order")
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
   subscriptionPayments SubscriptionPayment[]
 
   @@map("pricing_plans")
@@ -129,30 +188,34 @@ model PricingPlan {
 
 // Subscription Payments Table
 model SubscriptionPayment {
-  id              String        @id @default(cuid())
-  userId          String?       @map("user_id")
-  pricingPlanId   String?       @map("pricing_plan_id")
-  planName        String?       @map("plan_name") @db.VarChar(100)
-  durationMonths  Int?          @map("duration_months")
-  originalAmount  Decimal?      @map("original_amount") @db.Decimal(10, 2)
-  discountAmount  Decimal?      @map("discount_amount") @db.Decimal(10, 2)
-  amount          Decimal?      @db.Decimal(10, 2)
-  discountCode    String?       @map("discount_code") @db.VarChar(50)
-  discountType    String?       @map("discount_type") @db.VarChar(20)
-  method          String?       @db.VarChar(50)
-  status          String?       @db.VarChar(20)
-  stripeCustomerId String?      @map("stripe_customer_id") @db.VarChar(255)
-  stripeSubscriptionId String?  @map("stripe_subscription_id") @db.VarChar(255)
-  stripePaymentIntentId String? @map("stripe_payment_intent_id") @db.VarChar(255)
-  stripeSetupIntentId String?   @map("stripe_setup_intent_id") @db.VarChar(255)
-  stripePaymentMethodId String? @map("stripe_payment_method_id") @db.VarChar(255)
-  stripePriceId   String?       @map("stripe_price_id") @db.VarChar(255)
-  currentPeriodEnd DateTime?    @map("current_period_end")
-  cancelAtPeriodEnd Boolean     @default(false) @map("cancel_at_period_end")
-  createdAt       DateTime?     @map("created_at")
-  user            User?         @relation(fields: [userId], references: [id])
-  pricingPlan     PricingPlan?  @relation(fields: [pricingPlanId], references: [id], onDelete: SetNull)
-  userLicenses    UserLicense[]
+  id                            String        @id @default(cuid())
+  userId                        String?       @map("user_id")
+  pricingPlanId                 String?       @map("pricing_plan_id")
+  planName                      String?       @map("plan_name") @db.VarChar(100)
+  durationMonths                Int?          @map("duration_months")
+  originalAmount                Decimal?      @map("original_amount") @db.Decimal(10, 2)
+  discountAmount                Decimal?      @map("discount_amount") @db.Decimal(10, 2)
+  amount                        Decimal?      @db.Decimal(10, 2)
+  discountCode                  String?       @map("discount_code") @db.VarChar(50)
+  discountType                  String?       @map("discount_type") @db.VarChar(20)
+  method                        String?       @db.VarChar(50)
+  status                        String?       @db.VarChar(20)
+  stripeCustomerId              String?       @map("stripe_customer_id") @db.VarChar(255)
+  stripeSubscriptionId          String?       @map("stripe_subscription_id") @db.VarChar(255)
+  stripePaymentIntentId         String?       @map("stripe_payment_intent_id") @db.VarChar(255)
+  stripeSetupIntentId           String?       @map("stripe_setup_intent_id") @db.VarChar(255)
+  stripePaymentMethodId         String?       @map("stripe_payment_method_id") @db.VarChar(255)
+  stripePriceId                 String?       @map("stripe_price_id") @db.VarChar(255)
+  appStoreEntitlementKey        String?       @unique @map("app_store_entitlement_key") @db.VarChar(255)
+  appStoreOriginalTransactionId String?       @unique @map("app_store_original_transaction_id") @db.VarChar(64)
+  storeProductId                String?       @map("store_product_id") @db.VarChar(255)
+  storeEnvironment              String?       @map("store_environment") @db.VarChar(20)
+  currentPeriodEnd              DateTime?     @map("current_period_end")
+  cancelAtPeriodEnd             Boolean       @default(false) @map("cancel_at_period_end")
+  createdAt                     DateTime?     @map("created_at")
+  user                          User?         @relation(fields: [userId], references: [id])
+  pricingPlan                   PricingPlan?  @relation(fields: [pricingPlanId], references: [id], onDelete: SetNull)
+  userLicenses                  UserLicense[]
 
   @@index([pricingPlanId])
   @@index([stripeSubscriptionId])
@@ -162,13 +225,14 @@ model SubscriptionPayment {
 
 // User Licenses Table
 model UserLicense {
-  id        String               @id @default(cuid())
-  userId    String?              @map("user_id")
-  paymentId String?              @map("payment_id")
-  createdAt DateTime?            @map("created_at")
-  expiresAt DateTime?            @map("expires_at")
-  user      User?                @relation(fields: [userId], references: [id])
-  payment   SubscriptionPayment? @relation(fields: [paymentId], references: [id])
+  id                     String               @id @default(cuid())
+  userId                 String?              @map("user_id")
+  paymentId              String?              @map("payment_id")
+  appStoreEntitlementKey String?              @unique @map("app_store_entitlement_key") @db.VarChar(255)
+  createdAt              DateTime?            @map("created_at")
+  expiresAt              DateTime?            @map("expires_at")
+  user                   User?                @relation(fields: [userId], references: [id])
+  payment                SubscriptionPayment? @relation(fields: [paymentId], references: [id])
 
   @@map("user_licenses")
 }
@@ -208,18 +272,20 @@ model Questionnaire {
 
 // Diet Plans Table
 model DietPlan {
-  id                   String               @id @default(cuid())
-  name                 String?              @db.VarChar(100)
-  calories             Int?
-  duration             String?              @db.VarChar(50)
-  description          String?              @db.Text
-  image                String?              @db.Text
-  cuisineName          String?              @map("cuisine_name") @db.VarChar(50)
-  gender               String?              @db.VarChar(20)
-  userDietPlans        UserDietPlan[]
-  userActiveDietPlan   UserActiveDietPlan[]
-  challengeDiets       ChallengeDiet[]
-  dietPlanDays         DietPlanDay[]
+  id                 String               @id @default(cuid())
+  name               String?              @db.VarChar(100)
+  calories           Int?
+  duration           String?              @db.VarChar(50)
+  description        String?              @db.Text
+  image              String?              @db.Text
+  cuisineName        String?              @map("cuisine_name") @db.VarChar(50)
+  gender             String?              @db.VarChar(20)
+  /// Who the plan is for (weight_loss, weight_gain, build_muscle, ...); matched against the user's goal.
+  goal               String?              @db.VarChar(50)
+  userDietPlans      UserDietPlan[]
+  userActiveDietPlan UserActiveDietPlan[]
+  challengeDiets     ChallengeDiet[]
+  dietPlanDays       DietPlanDay[]
 
   @@map("diet_plans")
 }
@@ -238,12 +304,12 @@ model UserDietPlan {
 
 // Diet Plan Days
 model DietPlanDay {
-  id             String          @id @default(cuid())
-  dietId         String          @map("diet_id")
-  dayNumber      Int             @map("day_number")
-  notes          String?         @db.Text
-  diet           DietPlan        @relation(fields: [dietId], references: [id])
-  dietPlanMeals  DietPlanMeal[]
+  id            String         @id @default(cuid())
+  dietId        String         @map("diet_id")
+  dayNumber     Int            @map("day_number")
+  notes         String?        @db.Text
+  diet          DietPlan       @relation(fields: [dietId], references: [id])
+  dietPlanMeals DietPlanMeal[]
 
   @@map("diet_plan_days")
 }
@@ -259,16 +325,20 @@ model MealType {
 
 // Diet Plan Meals
 model DietPlanMeal {
-  id          String       @id @default(cuid())
-  dayId       String       @map("day_id")
-  mealTypeId  String       @map("meal_type_id")
-  name        String       @db.VarChar(100)
-  calories    Int?
-  portionSize String?      @map("portion_size") @db.VarChar(50)
-  image       String?      @db.Text
-  recipe      String?      @db.Text
-  day         DietPlanDay  @relation(fields: [dayId], references: [id])
-  mealType    MealType     @relation(fields: [mealTypeId], references: [id])
+  id           String        @id @default(cuid())
+  dayId        String        @map("day_id")
+  mealTypeId   String        @map("meal_type_id")
+  name         String        @db.VarChar(100)
+  calories     Int?
+  portionSize  String?       @map("portion_size") @db.VarChar(150)
+  /// Grams per serving, as entered in the admin.
+  protein      Float?
+  carbs        Float?
+  fats         Float?
+  image        String?       @db.Text
+  recipe       String?       @db.Text
+  day          DietPlanDay   @relation(fields: [dayId], references: [id])
+  mealType     MealType      @relation(fields: [mealTypeId], references: [id])
   dietMealLogs DietMealLog[]
 
   @@map("diet_plan_meals")
@@ -276,16 +346,21 @@ model DietPlanMeal {
 
 // User Active Diet Plan
 model UserActiveDietPlan {
-  id         String    @id @default(cuid())
-  userId     String    @map("user_id")
-  dietId     String    @map("diet_id")
-  currentDay Int       @map("current_day")
-  startedAt  DateTime  @map("started_at")
-  pausedAt   DateTime? @map("paused_at")
-  user       User      @relation(fields: [userId], references: [id])
-  diet       DietPlan  @relation(fields: [dietId], references: [id])
+  id           String        @id @default(cuid())
+  userId       String        @map("user_id")
+  dietId       String        @map("diet_id")
+  currentDay   Int           @map("current_day")
+  startedAt    DateTime      @map("started_at")
+  pausedAt     DateTime?     @map("paused_at")
+  /// Set when the user deactivates the plan (e.g. to start another). Ended rows keep their
+  /// meal logs as history; only the row with endedAt = null is the user's active plan.
+  /// The migration adds a partial unique index: at most one open plan per user.
+  endedAt      DateTime?     @map("ended_at")
+  user         User          @relation(fields: [userId], references: [id])
+  diet         DietPlan      @relation(fields: [dietId], references: [id])
   dietMealLogs DietMealLog[]
 
+  @@index([userId, endedAt])
   @@map("user_active_diet_plan")
 }
 
@@ -356,6 +431,7 @@ model ExercisePlan {
   durationWeeks          Int?                     @map("duration_weeks")
   exercisePlanWeeks      ExercisePlanWeek[]
   userActiveExercisePlan UserActiveExercisePlan[]
+  userFavorites          UserFavoriteExercisePlan[]
 
   @@map("exercise_plans")
 }
@@ -391,44 +467,44 @@ model ExercisePlanSchedule {
 
 // User Active Exercise Plan
 model UserActiveExercisePlan {
-  id          String        @id @default(cuid())
-  userId      String        @map("user_id")
-  planId      String        @map("plan_id")
-  currentWeek Int           @map("current_week")
-  startedAt   DateTime      @map("started_at")
-  pausedAt    DateTime?     @map("paused_at")
-  user        User          @relation(fields: [userId], references: [id])
-  plan        ExercisePlan  @relation(fields: [planId], references: [id])
+  id          String       @id @default(cuid())
+  userId      String       @map("user_id")
+  planId      String       @map("plan_id")
+  currentWeek Int          @map("current_week")
+  startedAt   DateTime     @map("started_at")
+  pausedAt    DateTime?    @map("paused_at")
+  user        User         @relation(fields: [userId], references: [id])
+  plan        ExercisePlan @relation(fields: [planId], references: [id])
 
   @@map("user_active_exercise_plan")
 }
 
 // Exercise Details
 model ExerciseDetail {
-  id           String    @id @default(cuid())
-  exerciseId   String    @map("exercise_id")
+  id           String   @id @default(cuid())
+  exerciseId   String   @map("exercise_id")
   sets         Int?
-  reps         String?   @db.VarChar(50)
+  reps         String?  @db.VarChar(50)
   calories     Int?
-  timeRequired String?   @map("time_required") @db.VarChar(50)
-  mediaUrl     String?   @map("media_url") @db.Text
-  instructions String?   @db.Text
-  exercise     Exercise  @relation(fields: [exerciseId], references: [id])
+  timeRequired String?  @map("time_required") @db.VarChar(50)
+  mediaUrl     String?  @map("media_url") @db.Text
+  instructions String?  @db.Text
+  exercise     Exercise @relation(fields: [exerciseId], references: [id])
 
   @@map("exercise_details")
 }
 
 // User Exercise Progress
 model UserExerciseProgress {
-  id                 String                @id @default(cuid())
-  userId             String                @map("user_id")
-  exerciseScheduleId String                @map("exercise_schedule_id")
-  progressPercent    Int?                  @map("progress_percent")
-  note               String?               @db.Text
+  id                 String               @id @default(cuid())
+  userId             String               @map("user_id")
+  exerciseScheduleId String               @map("exercise_schedule_id")
+  progressPercent    Int?                 @map("progress_percent")
+  note               String?              @db.Text
   completed          Boolean?
-  completedAt        DateTime?             @map("completed_at")
-  user               User                  @relation(fields: [userId], references: [id])
-  exerciseSchedule   ExercisePlanSchedule  @relation(fields: [exerciseScheduleId], references: [id])
+  completedAt        DateTime?            @map("completed_at")
+  user               User                 @relation(fields: [userId], references: [id])
+  exerciseSchedule   ExercisePlanSchedule @relation(fields: [exerciseScheduleId], references: [id])
 
   @@map("user_exercise_progress")
 }
@@ -452,12 +528,44 @@ model Challenge {
   videoUrl           String?             @map("video_url") @db.Text
   startDate          DateTime?           @map("start_date") @db.Date
   endDate            DateTime?           @map("end_date") @db.Date
+  scheduledAt        DateTime?           @map("scheduled_at")
+  durationDays       Int?                @map("duration_days")
+  dailyFee           Decimal?            @map("daily_fee") @db.Decimal(10, 2)
+  createdAt          DateTime?           @default(now()) @map("created_at")
   challengeExercises ChallengeExercise[]
   challengeDiets     ChallengeDiet[]
   challengeFees      ChallengeFee[]
   userChallenges     UserChallenge[]
+  reports            ChallengeReport[]
 
   @@map("challenges")
+}
+
+// Start of an email's one free week (full app, with ads). Keyed by a hash of the email with no
+// link to users, so deleting the account and signing up again does not restart the week.
+model FreeWeekClaim {
+  emailHash String   @id @map("email_hash") @db.VarChar(64)
+  startedAt DateTime @default(now()) @map("started_at")
+
+  @@map("free_week_claims")
+}
+
+// A user flagging a public challenge as objectionable; admins remove the challenge or dismiss the reports.
+model ChallengeReport {
+  id          String    @id @default(cuid())
+  challengeId String    @map("challenge_id")
+  reporterId  String    @map("reporter_id")
+  reason      String    @db.VarChar(30)
+  details     String?   @db.Text
+  status      String    @default("OPEN") @db.VarChar(20)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  resolvedAt  DateTime? @map("resolved_at")
+  challenge   Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  reporter    User      @relation("ChallengeReports", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@unique([challengeId, reporterId])
+  @@index([status, createdAt])
+  @@map("challenge_reports")
 }
 
 // Challenge Exercises Table (Many-to-Many)
@@ -484,15 +592,18 @@ model ChallengeDiet {
 
 // Challenge Fees Table
 model ChallengeFee {
-  id             String          @id @default(cuid())
-  userId         String?         @map("user_id")
-  challengeId    String?         @map("challenge_id")
-  amount         Decimal?        @db.Decimal(10, 2)
-  method         String?         @db.VarChar(50)
-  status         String?         @db.VarChar(20)
-  user           User?           @relation(fields: [userId], references: [id])
-  challenge      Challenge?      @relation(fields: [challengeId], references: [id])
-  userChallenges UserChallenge[]
+  id                String          @id @default(cuid())
+  userId            String?         @map("user_id")
+  challengeId       String?         @map("challenge_id")
+  amount            Decimal?        @db.Decimal(10, 2)
+  method            String?         @db.VarChar(50)
+  status            String?         @db.VarChar(20)
+  providerReference String?         @unique @map("provider_reference") @db.VarChar(255)
+  createdAt         DateTime        @default(now()) @map("created_at")
+  paidAt            DateTime?       @map("paid_at")
+  user              User?           @relation(fields: [userId], references: [id])
+  challenge         Challenge?      @relation(fields: [challengeId], references: [id])
+  userChallenges    UserChallenge[]
 
   @@map("challenge_fees")
 }
@@ -506,6 +617,7 @@ model UserChallenge {
   date        DateTime?     @db.Date
   time        DateTime?     @db.Time(6)
   joinedAt    DateTime?     @map("joined_at")
+  completedAt DateTime?     @map("completed_at")
   challenge   Challenge?    @relation(fields: [challengeId], references: [id])
   fee         ChallengeFee? @relation(fields: [feeId], references: [id])
   user        User?         @relation(fields: [userId], references: [id])
@@ -518,6 +630,27 @@ model UserChallenge {
 // ============================
 
 // Cheat Days Table
+// Food eaten outside a diet plan's meals: barcode scans, photo scans, manual entries.
+model FoodLog {
+  id       String   @id @default(cuid())
+  userId   String   @map("user_id")
+  date     DateTime @db.Date
+  mealType String?  @map("meal_type") @db.VarChar(50)
+  name     String   @db.VarChar(150)
+  calories Int?
+  protein  Float?
+  carbs    Float?
+  fat      Float?
+  source   String   @db.VarChar(20)
+  barcode  String?  @db.VarChar(64)
+  image    String?  @db.Text
+  loggedAt DateTime @default(now()) @map("logged_at")
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+  @@map("food_logs")
+}
+
 model CheatDay {
   id          String    @id @default(cuid())
   userId      String?   @map("user_id")
@@ -525,6 +658,10 @@ model CheatDay {
   image       String?   @db.Text
   mealType    String?   @map("meal_type") @db.VarChar(50)
   portionSize String?   @map("portion_size") @db.VarChar(50)
+  calories    Int?
+  protein     Float?
+  carbs       Float?
+  fat         Float?
   loggedAt    DateTime? @map("logged_at")
   user        User?     @relation(fields: [userId], references: [id])
 
@@ -539,9 +676,14 @@ model FastingLog {
   timeStart         DateTime?          @map("time_start") @db.Time(6)
   timeEnd           DateTime?          @map("time_end") @db.Time(6)
   durationMinutes   Int?               @map("duration_minutes")
+  startedAt         DateTime?          @map("started_at")
+  endedAt           DateTime?          @map("ended_at")
+  targetMinutes     Int?               @map("target_minutes")
+  status            String?            @db.VarChar(20)
   user              User?              @relation(fields: [userId], references: [id])
   userDailyRoutines UserDailyRoutine[]
 
+  @@index([userId, status])
   @@map("fasting_logs")
 }
 
@@ -600,35 +742,66 @@ model WaterIntakeLog {
 
 // Medications Table
 model Medication {
-  id                String               @id @default(cuid())
-  userId            String?              @map("user_id")
-  name              String?              @db.VarChar(100)
-  quantity          Int?
-  dose              String?              @db.VarChar(50)
-  frequency         String?              @db.VarChar(50)
-  reminderTime      DateTime?            @map("reminder_time") @db.Time(6)
-  image             String?              @db.Text
-  icon              String?              @db.Text
-  appearanceColor   String?              @map("appearance_color") @db.VarChar(20)
-  appearanceIcon    String?              @map("appearance_icon") @db.Text
-  addedAt           DateTime?            @map("added_at")
-  user              User?                @relation(fields: [userId], references: [id])
+  id                  String               @id @default(cuid())
+  userId              String?              @map("user_id")
+  name                String?              @db.VarChar(100)
+  quantity            Int?
+  dose                String?              @db.VarChar(50)
+  frequency           String?              @db.VarChar(50)
+  reminderTime        DateTime?            @map("reminder_time") @db.Time(6)
+  image               String?              @db.Text
+  icon                String?              @db.Text
+  appearanceColor     String?              @map("appearance_color") @db.VarChar(20)
+  appearanceIcon      String?              @map("appearance_icon") @db.Text
+  addedAt             DateTime?            @map("added_at")
+  user                User?                @relation(fields: [userId], references: [id])
   medicationReminders MedicationReminder[]
-  userDailyRoutines UserDailyRoutine[]
+  intakes             MedicationIntake[]
+  userDailyRoutines   UserDailyRoutine[]
 
   @@map("medications")
 }
 
 // Medication Reminders
+// Whether a medication was taken or skipped on a day; days with no row count as missed.
+model MedicationIntake {
+  id           String     @id @default(cuid())
+  medicationId String     @map("medication_id")
+  userId       String     @map("user_id")
+  date         DateTime   @db.Date
+  status       String     @db.VarChar(10)
+  recordedAt   DateTime   @default(now()) @map("recorded_at")
+  medication   Medication @relation(fields: [medicationId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([medicationId, date])
+  @@index([userId, date])
+  @@map("medication_intakes")
+}
+
+// One weight reading per user per day, recorded whenever the weight is saved.
+model WeightLog {
+  id       String   @id @default(cuid())
+  userId   String   @map("user_id")
+  date     DateTime @db.Date
+  weight   Float
+  unit     String?  @db.VarChar(10)
+  loggedAt DateTime @default(now()) @map("logged_at")
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@map("weight_logs")
+}
+
 model MedicationReminder {
-  id           String      @id @default(cuid())
-  medicationId String      @map("medication_id")
-  userId       String      @map("user_id")
-  reminderTime DateTime    @map("reminder_time") @db.Time(6)
-  repeatType   String?     @map("repeat_type") @db.VarChar(50)
-  enabled      Boolean     @default(true)
-  medication   Medication  @relation(fields: [medicationId], references: [id])
-  user         User        @relation(fields: [userId], references: [id])
+  id           String     @id @default(cuid())
+  medicationId String     @map("medication_id")
+  userId       String     @map("user_id")
+  reminderTime DateTime   @map("reminder_time") @db.Time(6)
+  repeatType   String?    @map("repeat_type") @db.VarChar(50)
+  enabled      Boolean    @default(true)
+  medication   Medication @relation(fields: [medicationId], references: [id])
+  user         User       @relation(fields: [userId], references: [id])
 
   @@map("medication_reminders")
 }
@@ -639,16 +812,31 @@ model MedicationReminder {
 
 // Meditations Table
 model Meditation {
-  id                String              @id @default(cuid())
-  name              String?             @db.VarChar(100)
-  type              String?             @db.VarChar(50)
-  description       String?             @db.Text
-  image             String?             @db.Text
-  soundUrl          String?             @map("sound_url") @db.Text
+  id                 String              @id @default(cuid())
+  name               String?             @db.VarChar(100)
+  type               String?             @db.VarChar(50)
+  description        String?             @db.Text
+  image              String?             @db.Text
+  soundUrl           String?             @map("sound_url") @db.Text
   meditationSessions MeditationSession[]
-  userDailyRoutines UserDailyRoutine[]
+  userDailyRoutines  UserDailyRoutine[]
+  userMeditationLogs UserMeditationLog[]
 
   @@map("meditations")
+}
+
+// One row per meditation a user finished (the daily routine only keeps the last of the day)
+model UserMeditationLog {
+  id              String     @id @default(cuid())
+  userId          String     @map("user_id")
+  meditationId    String     @map("meditation_id")
+  durationSeconds Int?       @map("duration_seconds")
+  completedAt     DateTime   @default(now()) @map("completed_at")
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  meditation      Meditation @relation(fields: [meditationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, completedAt])
+  @@map("user_meditation_logs")
 }
 
 // Meditation Sessions
@@ -675,6 +863,20 @@ model UserFavoriteMeditation {
   session     MeditationSession @relation(fields: [sessionId], references: [id])
 
   @@map("user_favorite_meditations")
+}
+
+// Exercise plans a user has hearted on the Exercise tab.
+model UserFavoriteExercisePlan {
+  id          String       @id @default(cuid())
+  userId      String       @map("user_id")
+  planId      String       @map("plan_id")
+  favoritedAt DateTime     @default(now()) @map("favorited_at")
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan        ExercisePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, planId])
+  @@index([userId])
+  @@map("user_favorite_exercise_plans")
 }
 
 // ============================
@@ -716,6 +918,7 @@ model SleepStory {
   category    String? @db.VarChar(50)
   duration    Int?
   isActive    Boolean @default(true) @map("is_active")
+  favorites   UserFavoriteSleepItem[]
 
   @@map("sleep_stories")
 }
@@ -730,8 +933,27 @@ model SleepSound {
   category    String? @db.VarChar(50)
   duration    Int?
   isActive    Boolean @default(true) @map("is_active")
+  favorites   UserFavoriteSleepItem[]
 
   @@map("sleep_sounds")
+}
+
+// Sleep sounds and stories a user has hearted on Better Sleep / Sleep Stories.
+// Exactly one of soundId and storyId is set (enforced by a CHECK in the migration).
+model UserFavoriteSleepItem {
+  id          String      @id @default(cuid())
+  userId      String      @map("user_id")
+  soundId     String?     @map("sound_id")
+  storyId     String?     @map("story_id")
+  favoritedAt DateTime    @default(now()) @map("favorited_at")
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sound       SleepSound? @relation(fields: [soundId], references: [id], onDelete: Cascade)
+  story       SleepStory? @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, soundId])
+  @@unique([userId, storyId])
+  @@index([userId])
+  @@map("user_favorite_sleep_items")
 }
 
 // ============================
@@ -752,36 +974,36 @@ model BlogCategory {
 
 // Blogs Table
 model Blog {
-  id          String        @id @default(cuid())
-  title       String        @db.VarChar(255)
-  slug        String        @unique @db.VarChar(255)
-  content     String        @db.Text
-  excerpt     String?       @db.Text
-  coverImage  String?       @map("cover_image") @db.Text
-  status      String        @default("draft") @db.VarChar(20)
-  authorId    String?       @map("author_id")
-  categoryId  String?       @map("category_id")
-  author      User?         @relation(fields: [authorId], references: [id])
-  category    BlogCategory? @relation(fields: [categoryId], references: [id])
-  comments    BlogComment[]
-  createdAt   DateTime      @default(now()) @map("created_at")
-  updatedAt   DateTime      @updatedAt @map("updated_at")
+  id         String        @id @default(cuid())
+  title      String        @db.VarChar(255)
+  slug       String        @unique @db.VarChar(255)
+  content    String        @db.Text
+  excerpt    String?       @db.Text
+  coverImage String?       @map("cover_image") @db.Text
+  status     String        @default("draft") @db.VarChar(20)
+  authorId   String?       @map("author_id")
+  categoryId String?       @map("category_id")
+  author     User?         @relation(fields: [authorId], references: [id])
+  category   BlogCategory? @relation(fields: [categoryId], references: [id])
+  comments   BlogComment[]
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
 
   @@map("blogs")
 }
 
 // Blog Comments Table
 model BlogComment {
-  id        String          @id @default(cuid())
-  blogId    String          @map("blog_id")
-  userId    String?         @map("user_id")
-  content   String          @db.Text
-  parentId  String?         @map("parent_id")
-  blog      Blog            @relation(fields: [blogId], references: [id])
-  user      User?           @relation(fields: [userId], references: [id])
-  parent    BlogComment?    @relation("CommentReplies", fields: [parentId], references: [id])
-  replies   BlogComment[]   @relation("CommentReplies")
-  createdAt DateTime        @default(now()) @map("created_at")
+  id        String        @id @default(cuid())
+  blogId    String        @map("blog_id")
+  userId    String?       @map("user_id")
+  content   String        @db.Text
+  parentId  String?       @map("parent_id")
+  blog      Blog          @relation(fields: [blogId], references: [id])
+  user      User?         @relation(fields: [userId], references: [id])
+  parent    BlogComment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies   BlogComment[] @relation("CommentReplies")
+  createdAt DateTime      @default(now()) @map("created_at")
 
   @@map("blog_comments")
 }
@@ -792,34 +1014,34 @@ model BlogComment {
 
 // Coupon Codes Table (created by admin, given to doctors/users)
 model CouponCode {
-  id              String        @id @default(cuid())
-  code            String        @unique @db.VarChar(50)
-  description     String?       @db.Text
-  discountPercent Int           @default(10) @map("discount_percent")
-  maxUses         Int           @map("max_uses")
-  currentUses     Int           @default(0) @map("current_uses")
-  isActive        Boolean       @default(true) @map("is_active")
-  expiresAt       DateTime?     @map("expires_at")
-  createdById     String?       @map("created_by_id")
-  createdAt       DateTime      @default(now()) @map("created_at")
-  updatedAt       DateTime      @updatedAt @map("updated_at")
+  id              String    @id @default(cuid())
+  code            String    @unique @db.VarChar(50)
+  description     String?   @db.Text
+  discountPercent Int       @default(10) @map("discount_percent")
+  maxUses         Int       @map("max_uses")
+  currentUses     Int       @default(0) @map("current_uses")
+  isActive        Boolean   @default(true) @map("is_active")
+  expiresAt       DateTime? @map("expires_at")
+  createdById     String?   @map("created_by_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  createdBy       User?         @relation("AdminCreatedCoupons", fields: [createdById], references: [id])
-  usages          CouponUsage[]
+  createdBy User?         @relation("AdminCreatedCoupons", fields: [createdById], references: [id])
+  usages    CouponUsage[]
 
   @@map("coupon_codes")
 }
 
 // Coupon Usage Table (tracks which users used which coupons)
 model CouponUsage {
-  id        String     @id @default(cuid())
-  couponId  String     @map("coupon_id")
-  userId    String     @map("user_id")
-  paymentId String?    @map("payment_id")
-  usedAt    DateTime   @default(now()) @map("used_at")
+  id        String   @id @default(cuid())
+  couponId  String   @map("coupon_id")
+  userId    String   @map("user_id")
+  paymentId String?  @map("payment_id")
+  usedAt    DateTime @default(now()) @map("used_at")
 
-  coupon    CouponCode @relation(fields: [couponId], references: [id])
-  user      User       @relation(fields: [userId], references: [id])
+  coupon CouponCode @relation(fields: [couponId], references: [id])
+  user   User       @relation(fields: [userId], references: [id])
 
   @@unique([couponId, userId])
   @@map("coupon_usages")
@@ -827,34 +1049,34 @@ model CouponUsage {
 
 // Referral Codes Table (admin creates & assigns to doctors)
 model ReferralCode {
-  id              String          @id @default(cuid())
-  code            String          @unique @db.VarChar(50)
-  referrerId      String          @map("referrer_id")
-  description     String?         @db.Text
-  discountPercent Int             @default(10) @map("discount_percent")
-  maxUses         Int             @map("max_uses")
-  currentUses     Int             @default(0) @map("current_uses")
-  isActive        Boolean         @default(true) @map("is_active")
-  expiresAt       DateTime?       @map("expires_at")
-  createdAt       DateTime        @default(now()) @map("created_at")
-  updatedAt       DateTime        @updatedAt @map("updated_at")
+  id              String    @id @default(cuid())
+  code            String    @unique @db.VarChar(50)
+  referrerId      String    @map("referrer_id")
+  description     String?   @db.Text
+  discountPercent Int       @default(10) @map("discount_percent")
+  maxUses         Int       @map("max_uses")
+  currentUses     Int       @default(0) @map("current_uses")
+  isActive        Boolean   @default(true) @map("is_active")
+  expiresAt       DateTime? @map("expires_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  referrer        User            @relation("ReferralCodeOwner", fields: [referrerId], references: [id])
-  usages          ReferralUsage[]
+  referrer User            @relation("ReferralCodeOwner", fields: [referrerId], references: [id])
+  usages   ReferralUsage[]
 
   @@map("referral_codes")
 }
 
 // Referral Usage Table (tracks which users used which referral codes)
 model ReferralUsage {
-  id             String       @id @default(cuid())
-  referralCodeId String       @map("referral_code_id")
-  userId         String       @map("user_id")
-  paymentId      String?      @map("payment_id")
-  usedAt         DateTime     @default(now()) @map("used_at")
+  id             String   @id @default(cuid())
+  referralCodeId String   @map("referral_code_id")
+  userId         String   @map("user_id")
+  paymentId      String?  @map("payment_id")
+  usedAt         DateTime @default(now()) @map("used_at")
 
-  referralCode   ReferralCode @relation(fields: [referralCodeId], references: [id])
-  user           User         @relation(fields: [userId], references: [id])
+  referralCode ReferralCode @relation(fields: [referralCodeId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
 
   @@unique([referralCodeId, userId])
   @@map("referral_usages")
@@ -882,6 +1104,21 @@ model Session {
   sid       String   @unique
   data      String   @db.Text
   expiresAt DateTime @map("expires_at")
-  
+
   @@map("sessions")
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  type      String    @default("general") @db.VarChar(50)
+  title     String    @db.VarChar(150)
+  body      String?   @db.Text
+  data      Json?
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("notifications")
 }

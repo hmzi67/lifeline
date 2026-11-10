@@ -7,6 +7,9 @@ import {
   deleteDietPlan,
   searchDietPlans
 } from '../controllers/dietPlanController.js';
+import { getDietPlanSchedule, saveDietPlanSchedule } from '../controllers/dietPlanScheduleController.js';
+import authenticate from '../middleware/authenticate.js';
+import authorize from '../middleware/authorize.js';
 
 const router = Router();
 
@@ -19,13 +22,19 @@ router.get('/search', searchDietPlans);
 // GET /api/diet-plans/:id - Get diet plan by ID
 router.get('/:id', getDietPlanById);
 
+// GET /api/diet-plans/:id/schedule - Days and meals of a plan (admin editor)
+router.get('/:id/schedule', authenticate, authorize(['admin']), getDietPlanSchedule);
+
+// PUT /api/diet-plans/:id/schedule - Replace a plan's days and meals in one save
+router.put('/:id/schedule', authenticate, authorize(['admin']), saveDietPlanSchedule);
+
 // POST /api/diet-plans - Create new diet plan
-router.post('/', createDietPlan);
+router.post('/', authenticate, authorize(['admin']), createDietPlan);
 
 // PUT /api/diet-plans/:id - Update diet plan
-router.put('/:id', updateDietPlan);
+router.put('/:id', authenticate, authorize(['admin']), updateDietPlan);
 
 // DELETE /api/diet-plans/:id - Delete diet plan
-router.delete('/:id', deleteDietPlan);
+router.delete('/:id', authenticate, authorize(['admin']), deleteDietPlan);
 
 export default router;

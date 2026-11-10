@@ -7,6 +7,7 @@ export { default as compression } from './compression.js';
 export { default as requestId } from './requestId.js';
 export { default as validateRequest } from './validateRequest.js';
 export { default as authenticate } from './authenticate.js';
+export { default as requireActiveLicense } from './requireActiveLicense.js';
 export { default as authorize } from './authorize.js';
 export { default as notFound } from './notFound.js';
 export { default as timeout } from './timeout.js';

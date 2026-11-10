@@ -1,24 +1,22 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { z } from 'zod'; // Optional: for validation
+import { z } from 'zod';
+import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 
 const prisma = new PrismaClient();
 
-// Validation schemas (optional but recommended)
 const createPaymentSchema = z.object({
   userId: z.string().min(1, 'User ID is required'),
   planName: z.string().min(1, 'Plan name is required'),
   amount: z.number().positive('Amount must be positive').optional(),
-  method: z.string().min(1, 'Payment method is required'),
-  status: z.enum(['PENDING', 'COMPLETED', 'FAILED', 'CANCELLED']).optional().default('PENDING')
-});
+  method: z.string().min(1, 'Payment method is required')
+}).strict();
 
 const updatePaymentSchema = z.object({
   planName: z.string().min(1).optional(),
   amount: z.number().positive().optional(),
-  method: z.string().min(1).optional(),
-  status: z.enum(['PENDING', 'COMPLETED', 'FAILED', 'CANCELLED']).optional()
-}).partial();
+  method: z.string().min(1).optional()
+}).strict();
 
 // Get all subscription payments with pagination
 export const getAllSubscriptionPayments = async (req: Request, res: Response) => {
@@ -123,7 +121,7 @@ export const createSubscriptionPayment = async (req: Request, res: Response) => 
         planName: validatedData.planName,
         amount: validatedData.amount,
         method: validatedData.method,
-        status: validatedData.status
+        status: 'PENDING'
       },
       include: {
         user: {
@@ -180,7 +178,6 @@ export const updateSubscriptionPayment = async (req: Request, res: Response) => 
     if (validatedData.planName !== undefined) updateData.planName = validatedData.planName;
     if (validatedData.amount !== undefined) updateData.amount = validatedData.amount;
     if (validatedData.method !== undefined) updateData.method = validatedData.method;
-    if (validatedData.status !== undefined) updateData.status = validatedData.status;
 
     const payment = await prisma.subscriptionPayment.update({
       where: { id },
@@ -314,6 +311,19 @@ export const getPaymentsByUserId = async (req: Request, res: Response) => {
       message: 'Error fetching user subscription payments'
     });
   }
+};
+
+// Get payments for the authenticated user. The user ID always comes from the
+// verified token rather than a caller-controlled path or request body.
+export const getMySubscriptionPayments = async (req: Request, res: Response) => {
+  const userId = (req as AuthenticatedRequest).user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  req.params.userId = userId;
+  return getPaymentsByUserId(req, res);
 };
 
 // Gracefully close Prisma connection

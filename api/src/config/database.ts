@@ -5,6 +5,9 @@ import {NextFunction, Request, Response} from "express";
 
 export const prisma = new PrismaClient()
 
+// Public contract marker lets deployment checks reject an older API artifact.
+export const API_CONTRACT_VERSION = '2026-10-24.routines-weight.v1';
+
 // Database connection function
 export const connectDatabase = async (): Promise<void> => {
   try {
@@ -34,6 +37,7 @@ export const healthCheck = async (req: Request, res: Response, next: NextFunctio
 
     const healthStatus = {
       status: 'healthy',
+      apiContract: API_CONTRACT_VERSION,
       timestamp: new Date().toISOString(),
       services: {
         database: 'connected',
@@ -46,6 +50,7 @@ export const healthCheck = async (req: Request, res: Response, next: NextFunctio
   } catch (error) {
     const healthStatus = {
       status: 'unhealthy',
+      apiContract: API_CONTRACT_VERSION,
       timestamp: new Date().toISOString(),
       services: {
         database: 'disconnected',

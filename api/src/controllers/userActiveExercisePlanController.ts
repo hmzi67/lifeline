@@ -50,9 +50,25 @@ export const getUserActiveExercisePlan = async (req: Request, res: Response): Pr
       return;
     }
 
+    // Week completion: scheduled exercises completed since this plan was started.
+    const scheduleIds = activePlan.plan.exercisePlanWeeks.flatMap((week) => week.exercisePlanSchedule.map((item) => item.id));
+    const completed = scheduleIds.length
+      ? await prisma.userExerciseProgress.findMany({
+          where: { userId, completed: true, exerciseScheduleId: { in: scheduleIds }, completedAt: { gte: activePlan.startedAt } },
+          select: { exerciseScheduleId: true },
+          distinct: ['exerciseScheduleId'],
+        })
+      : [];
+    const completedIds = new Set(completed.map((row) => row.exerciseScheduleId));
+    const weekProgress = activePlan.plan.exercisePlanWeeks.map((week) => {
+      const total = week.exercisePlanSchedule.length;
+      const done = week.exercisePlanSchedule.filter((item) => completedIds.has(item.id)).length;
+      return { weekNumber: week.weekNumber, completed: done, total, percent: total ? Math.round((done / total) * 100) : 0 };
+    });
+
     res.status(200).json({
       success: true,
-      data: activePlan,
+      data: { ...activePlan, weekProgress },
       message: 'Active exercise plan retrieved successfully'
     });
   } catch (error) {

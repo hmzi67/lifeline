@@ -7,17 +7,20 @@ import {
   deleteMeditation,
   getMeditationsByType
 } from '../controllers/meditationController.js';
+import authenticate from '../middleware/authenticate.js';
+import authorize from '../middleware/authorize.js';
+import requireActiveLicense from '../middleware/requireActiveLicense.js';
 
 const router = Router();
 
-// Public routes (no authentication required for viewing meditations)
-router.get('/', getMeditations);
-router.get('/type/:type', getMeditationsByType);
-router.get('/:id', getMeditationById);
+// Meditation responses include playable media URLs and are VIP-only.
+router.get('/', authenticate, requireActiveLicense, getMeditations);
+router.get('/type/:type', authenticate, requireActiveLicense, getMeditationsByType);
+router.get('/:id', authenticate, requireActiveLicense, getMeditationById);
 
 // Protected routes (require authentication for admin operations)
-router.post('/', createMeditation);
-router.put('/:id', updateMeditation);
-router.delete('/:id', deleteMeditation);
+router.post('/', authenticate, authorize(['admin']), createMeditation);
+router.put('/:id', authenticate, authorize(['admin']), updateMeditation);
+router.delete('/:id', authenticate, authorize(['admin']), deleteMeditation);
 
 export default router;

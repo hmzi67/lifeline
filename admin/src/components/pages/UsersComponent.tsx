@@ -383,17 +383,17 @@ const UsersComponent: React.FC = () => {
     );
 
     return (
-        <div className="space-y-6 p-6">
+        <div className="space-y-6 sm:p-6">
             <Card>
                 <CardHeader>
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
                         <div className="flex items-center gap-4">
                             <div className="p-3 bg-gradient-to-r from-blue-100 to-purple-100 rounded-xl">
                                 <Users className="w-6 h-6 text-blue-600" />
                             </div>
                             <div>
-                                <CardTitle className="text-3xl">Users Management</CardTitle>
-                                <CardDescription className="text-lg">
+                                <CardTitle className="text-2xl sm:text-3xl">Users Management</CardTitle>
+                                <CardDescription className="text-base sm:text-lg">
                                     Manage and monitor user activities ({table.getFilteredRowModel().rows.length} users)
                                 </CardDescription>
                             </div>
@@ -406,7 +406,7 @@ const UsersComponent: React.FC = () => {
                 </CardHeader>
                 <CardContent>
                     {/* Search and Filter Bar */}
-                    <div className="flex items-center justify-between gap-4 mb-6">
+                    <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
                         <div className="flex items-center gap-4">
                             <div className="relative flex-1 max-w-sm">
                                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -430,7 +430,7 @@ const UsersComponent: React.FC = () => {
                     </div>
 
                     {/* Table */}
-                    <div className="rounded-md border bg-white overflow-hidden">
+                    <div className="rounded-md border bg-white overflow-x-auto">
                         <table className="w-full">
                             <thead>
                                 {table.getHeaderGroups().map((headerGroup) => (

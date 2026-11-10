@@ -1,4 +1,4 @@
-import MenGraph from "@/assets/images/question/men_graph.png";
+import MenGraph from "@/assets/images/question/men_graph.webp";
 import WomenGraph from "@/assets/images/question/women_graph.png";
 import GraphImage from "@/assets/images/question/graph.png";
 import { useEffect, useState } from "react";

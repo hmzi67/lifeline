@@ -145,11 +145,17 @@ Make sure these are set in your `.env` file:
 
 ```env
 GOOGLE_CLIENT_ID=your-google-client-id-here
+GOOGLE_ANDROID_CLIENT_ID=your-android-web-client-id-here
 JWT_SECRET=your-jwt-secret-here
 JWT_REFRESH_SECRET=your-refresh-secret-here
 ```
 
-**Note:** You can use the same `GOOGLE_CLIENT_ID` for both web and mobile, or create separate credentials for Android/iOS if needed.
+**Note:** `GOOGLE_CLIENT_ID` remains the Passport web OAuth client. Set
+`GOOGLE_ANDROID_CLIENT_ID` when the native app requests ID tokens from a
+different Google project; the API accepts either explicitly configured
+audience. Its value must exactly match the mobile build's
+`EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`. Restart the API after changing the
+production environment so the running process receives the new audience.
 
 ## Mobile App Integration Guide
 
@@ -291,7 +297,7 @@ To test manually:
 1. **Configure Google Sign-In in mobile app:**
    - Android: Add SHA-1 fingerprint to Firebase Console
    - iOS: Add URL schemes to Info.plist
-   - Get the `GOOGLE_CLIENT_ID` (Web Client ID for Android, iOS Client ID for iOS)
+   - Set the app's web client ID as `GOOGLE_ANDROID_CLIENT_ID` on the backend
 
 2. **Implement Google Sign-In SDK in mobile app**
 
@@ -307,7 +313,7 @@ To test manually:
 
 If you encounter any issues:
 
-- Check that `GOOGLE_CLIENT_ID` environment variable is set correctly
+- Check that `GOOGLE_ANDROID_CLIENT_ID` matches the app's configured web client ID
 - Verify the ID token is valid and not expired
 - Ensure the token's audience matches your Google Client ID
 - Check backend logs for detailed error messages

@@ -103,6 +103,8 @@ export const logMeal = async (req: Request, res: Response): Promise<void> => {
         where: {
           id: String(activePlanId),
           userId,
+          // Meals can't be logged against a deactivated plan.
+          endedAt: null,
         },
       }),
       prisma.dietPlanMeal.findUnique({

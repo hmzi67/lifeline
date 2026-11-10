@@ -1,6 +1,6 @@
-import ps1img from "@/assets/images/affiliatehero/P-S-1.svg";
-import ps2img from "@/assets/images/affiliatehero/P-S-2.svg";
-import ps3img from "@/assets/images/affiliatehero/P-S-3.svg";
+import ps1img from "@/assets/images/affiliatehero/P-S-1.webp";
+import ps2img from "@/assets/images/affiliatehero/P-S-2.webp";
+import ps3img from "@/assets/images/affiliatehero/P-S-3.webp";
 
 const ProductShowcase = () => {
   return (

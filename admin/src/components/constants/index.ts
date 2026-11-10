@@ -19,7 +19,9 @@ import {
     UserPlus,
     Activity,
     TrendingUp,
-    CheckCircle
+    CheckCircle,
+    CalendarDays,
+    Bell
 } from 'lucide-react';
 import type { NavigationItem, StatData, DashboardData } from '@/types';
 
@@ -30,6 +32,7 @@ export const navigationItems: NavigationItem[] = [
     { id: 'diet', label: 'Diet Plans', icon: Package },
     { id: 'mealTypes', label: 'Meal Types', icon: Utensils },
     { id: 'exercise', label: 'Exercises', icon: Dumbbell },
+    { id: 'exercisePlans', label: 'Exercise Plans', icon: CalendarDays },
     { id: 'challenges', label: 'Challenges', icon: Target },
     { id: 'mindMeditation', label: 'Meditation', icon: Music },
     { id: 'sleepStories', label: 'Sleep Stories', icon: BookOpen },
@@ -39,6 +42,7 @@ export const navigationItems: NavigationItem[] = [
     { id: 'pricingPlans', label: 'Pricing Plans', icon: DollarSign },
     { id: 'coupons', label: 'Coupon Codes', icon: Ticket },
     { id: 'referralCodes', label: 'Referral Codes', icon: Link2 },
+    { id: 'notifications', label: 'Notifications', icon: Bell },
 ];
 
 export const getStatsData = (dashboardData: DashboardData | null): StatData[] => [

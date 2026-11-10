@@ -14,6 +14,7 @@ interface PricingPlan {
     originalPrice: number | null;
     durationMonths: number;
     trialDays: number;
+    appleProductId: string | null;
     features: string[];
     isActive: boolean;
     isHighlighted: boolean;
@@ -96,6 +97,7 @@ const PricingPlanComponent: React.FC = () => {
             originalPrice: data.originalPrice ? Number(data.originalPrice) : null,
             durationMonths: Number(data.durationMonths) || 1,
             trialDays: Number(data.trialDays) || 0,
+            appleProductId: String(data.appleProductId || '').trim() || null,
             features,
             isActive: data.isActive !== 'false',
             isHighlighted: data.isHighlighted === 'true',
@@ -175,6 +177,15 @@ const PricingPlanComponent: React.FC = () => {
             ),
         },
         {
+            key: 'appleProductId',
+            label: 'App Store',
+            render: (value) => (
+                <span className={`text-xs ${value ? 'text-gray-700 font-mono' : 'text-gray-400'}`}>
+                    {value || 'Not on iOS'}
+                </span>
+            ),
+        },
+        {
             key: 'features',
             label: 'Features',
             render: (value) => (
@@ -248,6 +259,7 @@ const PricingPlanComponent: React.FC = () => {
             type: 'number',
             required: true,
             placeholder: '9.99',
+            hint: 'Charged once by card (Android and web) for the whole duration; at least $0.50. iPhone buyers pay the App Store price set in App Store Connect.',
         },
         {
             name: 'originalPrice',
@@ -255,6 +267,7 @@ const PricingPlanComponent: React.FC = () => {
             type: 'number',
             required: false,
             placeholder: '19.99',
+            hint: 'Shown struck through next to the price, so it must be higher.',
         },
         {
             name: 'durationMonths',
@@ -262,6 +275,7 @@ const PricingPlanComponent: React.FC = () => {
             type: 'number',
             required: true,
             placeholder: '1',
+            hint: 'Access length for a card purchase. For iPhone, match the App Store product’s period.',
         },
         {
             name: 'trialDays',
@@ -269,6 +283,15 @@ const PricingPlanComponent: React.FC = () => {
             type: 'number',
             required: false,
             placeholder: '0',
+            hint: 'Card payments only: the card is saved and charged when the trial ends. iPhone trials are set as an introductory offer in App Store Connect.',
+        },
+        {
+            name: 'appleProductId',
+            label: 'App Store Product ID (iOS)',
+            type: 'text',
+            required: false,
+            placeholder: 'com.irtaza.lifeline.vip.monthly',
+            hint: 'Must match an auto-renewable subscription in App Store Connect exactly. Plans without it are hidden on iPhone. It cannot change once App Store subscribers exist.',
         },
         {
             name: 'features',
@@ -366,6 +389,7 @@ const PricingPlanComponent: React.FC = () => {
                               originalPrice: editingPlan.originalPrice ?? '',
                               durationMonths: editingPlan.durationMonths,
                               trialDays: editingPlan.trialDays,
+                              appleProductId: editingPlan.appleProductId || '',
                               features: (editingPlan.features || []).join('\n'),
                               sortOrder: editingPlan.sortOrder,
                               isHighlighted: String(editingPlan.isHighlighted),

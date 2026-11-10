@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Request, Response } from 'express';
 import { OAuth2Client } from 'google-auth-library';
 import jwt from 'jsonwebtoken';
@@ -7,6 +8,14 @@ import passport from 'passport';
 import { z } from 'zod';
 import { config } from '../config/index.js';
 import { sendEmailVerificationEmail, sendPasswordResetEmail } from '../services/emailService.js';
+import { isSuspended } from '../utils/accountAccess.js';
+import { checkOtp, clearedOtp, failedAttempt, issueOtp, otpErrorMessage } from '../services/otpService.js';
+import {
+  AppleIdentityConfigurationError,
+  AppleIdentityProviderError,
+  verifyAppleIdentityToken,
+} from '../services/appleIdentityService.js';
+import { encryptAppleToken, exchangeAppleAuthorizationCode } from '../services/appleTokenService.js';
 
 
 // JWT Payload interfaces
@@ -22,6 +31,8 @@ interface RefreshTokenPayload {
 
 const prisma = new PrismaClient();
 
+const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 // Validation schemas
 const signupSchema = z.object({
   email: z.string().email('Please provide a valid email address'),
@@ -36,25 +47,22 @@ const loginSchema = z.object({
 });
 
 // Helper function to generate JWT tokens
-const generateTokens = (userId: string, email: string, roleId?: string) => {
+export const generateTokens = (userId: string, email: string, roleId?: string) => {
   const accessToken = jwt.sign(
     { userId, email, roleId },
     config.jwt.secret,
-    { expiresIn: '15m' }
+    // An hour, so most app opens need no refresh (each refresh is a chance to lose its reply).
+    { expiresIn: '1h' }
   );
 
+  // jwtid keeps two refresh tokens issued in the same second distinct (token is @unique)
   const refreshToken = jwt.sign(
     { userId },
     config.jwt.refreshSecret,
-    { expiresIn: '7d' }
+    { expiresIn: '7d', jwtid: randomBytes(16).toString('hex') }
   );
 
   return { accessToken, refreshToken };
-};
-
-// Helper function to generate OTP
-const generateOTP = () => {
-  return Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
 };
 
 // Helper function to generate unique username
@@ -101,23 +109,23 @@ export const signup = async (req: Request, res: Response) => {
     const saltRounds = 12;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    // Generate username if not provided
-    let finalUsername = username || name;
-    if (!finalUsername) {
-      const baseUsername = email.split('@')[0];
-      finalUsername = await generateUniqueUsername(baseUsername);
-    }
+    // The typed name is a display name and need not be unique; the username is
+    // generated from the email unless the client chose one.
+    const finalUsername = username || (await generateUniqueUsername(email.split('@')[0]));
+    const displayName = name?.trim() || null;
 
     // Generate OTP for email verification
-    const otp = generateOTP();
+    const verification = issueOtp('verify_email');
+    const { otp } = verification;
 
     // Create user
     const user = await prisma.user.create({
       data: {
         username: finalUsername,
+        displayName,
         email,
         password: hashedPassword,
-        otp,
+        ...verification,
         status: 'pending', // Set status as pending until email verification
         isEmailVerified: false,
       },
@@ -125,6 +133,7 @@ export const signup = async (req: Request, res: Response) => {
         id: true,
         email: true,
         username: true,
+        displayName: true,
         roleId: true,
         isEmailVerified: true,
         status: true,
@@ -237,12 +246,13 @@ export const resendVerificationEmail = async (req: Request, res: Response) => {
     }
 
     // Generate new OTP
-    const otp = generateOTP();
+    const verification = issueOtp('verify_email');
+    const { otp } = verification;
 
     // Update user with new OTP
     await prisma.user.update({
       where: { id: user.id },
-      data: { otp },
+      data: verification,
     });
 
     // Send email with new OTP
@@ -320,12 +330,7 @@ export const verify = async (req: Request, res: Response) => {
       });
     }
 
-    const user = await prisma.user.findFirst({
-      where: {
-        email,
-        otp,
-      },
-    });
+    const user = await prisma.user.findFirst({ where: { email } });
 
     if (!user) {
       return res.status(400).json({
@@ -334,12 +339,23 @@ export const verify = async (req: Request, res: Response) => {
       });
     }
 
+    const result = checkOtp(user, otp, 'verify_email');
+    if (result !== 'ok') {
+      if (result === 'invalid' && user.otpPurpose === 'verify_email') {
+        await prisma.user.update({ where: { id: user.id }, data: failedAttempt(user) });
+      }
+      return res.status(400).json({
+        success: false,
+        message: otpErrorMessage(result),
+      });
+    }
+
     // Update user as verified
     await prisma.user.update({
       where: { id: user.id },
       data: {
         isEmailVerified: true,
-        otp: null, // Clear the OTP
+        ...clearedOtp,
         status: 'active', // Update status to active
       },
     });
@@ -420,20 +436,18 @@ export const login = async (req: Request, res: Response) => {
       user.roleId || undefined
     );
 
-    // Clean up old refresh tokens for this user (keep only the latest 5)
-    const existingTokens = await prisma.refreshToken.findMany({
-      where: { userId: user.id },
+    // Keep the latest 5 sessions. A session is its newest token; a refreshed token
+    // waiting for its replacement's first use belongs to the same session and goes with it.
+    const sessions = await prisma.refreshToken.findMany({
+      where: { userId: user.id, replacedById: null },
       orderBy: { createdAt: 'desc' },
+      select: { id: true },
     });
 
-    if (existingTokens.length >= 5) {
-      const tokensToDelete = existingTokens.slice(4);
+    if (sessions.length >= 5) {
+      const staleIds = sessions.slice(4).map(token => token.id);
       await prisma.refreshToken.deleteMany({
-        where: {
-          id: {
-            in: tokensToDelete.map(token => token.id),
-          },
-        },
+        where: { OR: [{ id: { in: staleIds } }, { replacedById: { in: staleIds } }] },
       });
     }
 
@@ -455,7 +469,16 @@ export const login = async (req: Request, res: Response) => {
     });
 
     // Remove sensitive data from response
-    const { password: _, otp: __, ...userWithoutSensitiveData } = user;
+    const {
+      password: _,
+      otp: __,
+      otpPurpose: ___,
+      otpExpiresAt: ____,
+      otpAttempts: _____,
+      appleRefreshToken: ______,
+      appleClientId: _______,
+      ...userWithoutSensitiveData
+    } = user;
 
     // Native clients cannot rely on the httpOnly browser cookie, so include
     // the refresh token in the JSON session contract and prevent token caching.
@@ -497,13 +520,25 @@ export const login = async (req: Request, res: Response) => {
 export const logout = async (req: Request, res: Response) => {
   try {
     // Accept refresh token from request body (for React Native) or cookie (for web)
-    const refreshToken = req.body?.refreshToken || req.cookies?.refreshToken;
+    const refreshToken = req.body?.refreshToken || readCookie(req, 'refreshToken');
 
     if (refreshToken) {
-      // Remove refresh token from database
-      await prisma.refreshToken.deleteMany({
+      // Remove the token and the rest of its session: the token it replaced and its replacement.
+      const stored = await prisma.refreshToken.findUnique({
         where: { token: refreshToken },
+        select: { id: true, replacedById: true },
       });
+      if (stored) {
+        await prisma.refreshToken.deleteMany({
+          where: {
+            OR: [
+              { id: stored.id },
+              { replacedById: stored.id },
+              ...(stored.replacedById ? [{ id: stored.replacedById }] : []),
+            ],
+          },
+        });
+      }
     }
 
     // Clear refresh token cookie
@@ -526,7 +561,7 @@ export const logout = async (req: Request, res: Response) => {
 export const refreshToken = async (req: Request, res: Response) => {
   try {
     // Accept refresh token from request body (for React Native) or cookie (for web)
-    const refreshToken = req.body?.refreshToken || req.cookies?.refreshToken;
+    const refreshToken = req.body?.refreshToken || readCookie(req, 'refreshToken');
 
     if (!refreshToken) {
       return res.status(401).json({
@@ -547,7 +582,7 @@ export const refreshToken = async (req: Request, res: Response) => {
     // Verify refresh token
     const decoded = jwt.verify(
       refreshToken,
-      process.env.JWT_REFRESH_SECRET || 'fallback-refresh-secret'
+      config.jwt.refreshSecret
     ) as RefreshTokenPayload;
 
     // Check if the refresh token exists in a database and is not expired
@@ -566,6 +601,7 @@ export const refreshToken = async (req: Request, res: Response) => {
             id: true,
             email: true,
             roleId: true,
+            status: true,
           },
         },
       },
@@ -578,18 +614,94 @@ export const refreshToken = async (req: Request, res: Response) => {
       });
     }
 
-    // Generate a new access token
+    // A suspended account loses its sessions. (Unverified accounts may refresh:
+    // signup issues these tokens before the code is entered.)
+    if (isSuspended(storedToken.user.status)) {
+      await prisma.refreshToken.deleteMany({ where: { userId: storedToken.user.id } });
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has been suspended. Please contact support.',
+        code: 'ACCOUNT_SUSPENDED',
+      });
+    }
+
+    // Rotate without ever stranding the client: the presented token stays valid until
+    // its replacement is first used, which proves the client received it.
+    const now = new Date();
+    let replacement = storedToken.replacedById
+      ? await prisma.refreshToken.findFirst({
+          where: { id: storedToken.replacedById, expiresAt: { gt: now } },
+          select: { id: true, token: true },
+        })
+      : null;
+
+    // No replacement yet (or it expired): issue one. When the token already has an unused
+    // replacement, the reply carrying it was lost or two refreshes raced, so it is sent again.
+    if (!replacement) {
+      const { refreshToken: issued } = generateTokens(
+        storedToken.user.id,
+        storedToken.user.email,
+        storedToken.user.roleId || undefined
+      );
+      replacement = await prisma.$transaction(async (tx) => {
+        const created = await tx.refreshToken.create({
+          data: {
+            token: issued,
+            userId: storedToken.user.id,
+            expiresAt: new Date(now.getTime() + REFRESH_TOKEN_TTL_MS),
+          },
+          select: { id: true, token: true },
+        });
+        const claimed = await tx.refreshToken.updateMany({
+          where: { id: storedToken.id, replacedById: storedToken.replacedById },
+          data: { replacedById: created.id },
+        });
+        if (claimed.count === 1) return created;
+
+        // A parallel refresh with the same token got there first: hand out its replacement.
+        await tx.refreshToken.delete({ where: { id: created.id } });
+        const current = await tx.refreshToken.findUnique({ where: { id: storedToken.id }, select: { replacedById: true } });
+        return current?.replacedById
+          ? tx.refreshToken.findUnique({ where: { id: current.replacedById }, select: { id: true, token: true } })
+          : null;
+      });
+    }
+
+    if (!replacement) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired refresh token',
+      });
+    }
+
+    // Using this token proves the client received it, so the token it replaced can go.
+    await prisma.refreshToken.deleteMany({ where: { replacedById: storedToken.id } });
+
     const { accessToken } = generateTokens(
       storedToken.user.id,
       storedToken.user.email,
       storedToken.user.roleId || undefined
     );
+    const newRefreshToken = replacement.token;
+
+    res.cookie('refreshToken', newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    res.set({
+      'Cache-Control': 'no-store',
+      Pragma: 'no-cache',
+    });
 
     res.status(200).json({
       success: true,
       message: 'Token refreshed successfully',
       data: {
         accessToken,
+        refreshToken: newRefreshToken,
       },
     });
   } catch (error) {
@@ -626,7 +738,7 @@ export const getCurrentUser = async (req: Request, res: Response) => {
     }
 
     const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as JWTPayload;
+    const decoded = jwt.verify(token, config.jwt.secret) as JWTPayload;
 
     // No need to parse userId as integer - it's already a string (CUID)
     const user = await prisma.user.findUnique({
@@ -645,7 +757,7 @@ export const getCurrentUser = async (req: Request, res: Response) => {
     }
 
     // Remove sensitive data
-    const { password, otp, ...userWithoutSensitiveData } = user;
+    const { password, otp, otpPurpose, otpExpiresAt, otpAttempts, appleRefreshToken, appleClientId, ...userWithoutSensitiveData } = user;
 
     res.status(200).json({
       success: true,
@@ -708,12 +820,13 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
     }
 
     // Generate OTP for password reset
-    const resetOTP = generateOTP();
+    const reset = issueOtp('reset_password');
+    const resetOTP = reset.otp;
 
     // Update user with reset OTP
     await prisma.user.update({
       where: { id: user.id },
-      data: { otp: resetOTP },
+      data: reset,
     });
 
     // Send email with reset OTP
@@ -726,7 +839,7 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
       // Clear the OTP since email failed
       await prisma.user.update({
         where: { id: user.id },
-        data: { otp: null },
+        data: clearedOtp,
       });
 
       return res.status(500).json({
@@ -735,9 +848,10 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
       });
     }
 
+    // Same wording as the unknown-email reply above, so the response can't be used to probe for accounts.
     res.status(200).json({
       success: true,
-      message: 'Password reset OTP has been sent to your email.',
+      message: 'If an account with this email exists, a password reset OTP has been sent.',
     });
   } catch (error) {
     console.error('Password reset request error:', error);
@@ -767,18 +881,24 @@ export const resetPassword = async (req: Request, res: Response) => {
       });
     }
 
-    // Find a user with matching email and OTP
-    const user = await prisma.user.findFirst({
-      where: {
-        email,
-        otp,
-      },
-    });
+    // Same normalisation as requestPasswordReset, which issued the code.
+    const user = await prisma.user.findFirst({ where: { email: String(email).trim().toLowerCase() } });
 
     if (!user) {
       return res.status(400).json({
         success: false,
         message: 'Invalid email or OTP',
+      });
+    }
+
+    const result = checkOtp(user, otp, 'reset_password');
+    if (result !== 'ok') {
+      if (result === 'invalid' && user.otpPurpose === 'reset_password') {
+        await prisma.user.update({ where: { id: user.id }, data: failedAttempt(user) });
+      }
+      return res.status(400).json({
+        success: false,
+        message: otpErrorMessage(result),
       });
     }
 
@@ -792,7 +912,7 @@ export const resetPassword = async (req: Request, res: Response) => {
         where: { id: user.id },
         data: {
           password: hashedPassword,
-          otp: null, // Clear OTP after a successful reset
+          ...clearedOtp, // Clear OTP after a successful reset
         },
       }),
       prisma.refreshToken.deleteMany({
@@ -813,6 +933,121 @@ export const resetPassword = async (req: Request, res: Response) => {
   }
 };
 
+// Web OAuth hand-off. After a Google or Apple web sign-in the browser is sent
+// back to the client with a single-use code instead of tokens, so no
+// credential ends up in browser history, proxy logs or Referer headers. The
+// code is bound to the browser by an httpOnly cookie and expires in a minute.
+const OAUTH_LOGIN_CODE_TTL_MS = 60 * 1000;
+const OAUTH_LOGIN_COOKIE = 'oauth_login';
+const OAUTH_LOGIN_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax' as const,
+  path: '/api/auth/oauth',
+};
+
+const hashSecret = (value: string) => createHash('sha256').update(value).digest('hex');
+
+const issueOAuthLoginCode = async (res: Response, userId: string) => {
+  const code = randomBytes(32).toString('base64url');
+  const binding = randomBytes(32).toString('base64url');
+
+  await prisma.oauthLoginCode.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+  await prisma.oauthLoginCode.create({
+    data: {
+      codeHash: hashSecret(code),
+      bindingHash: hashSecret(binding),
+      userId,
+      expiresAt: new Date(Date.now() + OAUTH_LOGIN_CODE_TTL_MS),
+    },
+  });
+
+  res.cookie(OAUTH_LOGIN_COOKIE, binding, {
+    ...OAUTH_LOGIN_COOKIE_OPTIONS,
+    maxAge: OAUTH_LOGIN_CODE_TTL_MS,
+  });
+
+  return code;
+};
+
+// Web OAuth: trade the single-use code from /auth/callback for a session
+export const exchangeOAuthLoginCode = async (req: Request, res: Response) => {
+  const binding = readCookie(req, OAUTH_LOGIN_COOKIE);
+  res.clearCookie(OAUTH_LOGIN_COOKIE, OAUTH_LOGIN_COOKIE_OPTIONS);
+  res.set({
+    'Cache-Control': 'no-store',
+    Pragma: 'no-cache',
+  });
+
+  const rejectCode = () => res.status(401).json({
+    success: false,
+    message: 'Sign-in link is invalid or has expired. Please sign in again.',
+  });
+
+  const code = req.body?.code;
+  if (typeof code !== 'string' || !code || !binding) {
+    return rejectCode();
+  }
+
+  try {
+    const record = await prisma.oauthLoginCode.findUnique({
+      where: { codeHash: hashSecret(code) },
+      include: { user: { select: { id: true, email: true, roleId: true, status: true } } },
+    });
+    if (!record) {
+      return rejectCode();
+    }
+
+    // Burn the code on its first use, whatever the outcome. The count check
+    // makes concurrent exchanges of the same code succeed at most once.
+    const { count } = await prisma.oauthLoginCode.deleteMany({ where: { id: record.id } });
+    if (
+      count !== 1 ||
+      record.expiresAt <= new Date() ||
+      !safeEqual(hashSecret(binding), record.bindingHash)
+    ) {
+      return rejectCode();
+    }
+
+    const { user } = record;
+    if (user.status === 'blocked' || user.status === 'suspended') {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has been suspended. Please contact support.',
+      });
+    }
+
+    const { accessToken, refreshToken } = generateTokens(user.id, user.email, user.roleId || undefined);
+
+    await prisma.refreshToken.create({
+      data: {
+        token: refreshToken,
+        userId: user.id,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      },
+    });
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      data: { accessToken },
+    });
+  } catch (error) {
+    console.error('OAuth code exchange error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
 // Google OAuth functions
 export const googleAuth = (req: Request, res: Response) => {
   passport.authenticate('google', {
@@ -824,49 +1059,25 @@ export const googleAuthCallback = (req: Request, res: Response) => {
   passport.authenticate(
     'google',
     {
-      failureRedirect: `${process.env.FRONTEND_URL}/login?error=oauth_failed`,
+      failureRedirect: `${process.env.FRONTEND_URL}/auth/callback?error=oauth_failed`,
     },
     async (err: any, user: any) => {
       if (err) {
         console.error('Google OAuth callback error:', err);
-        return res.redirect(`${process.env.FRONTEND_URL}/login?error=oauth_error`);
+        return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=oauth_error`);
       }
 
       if (!user) {
-        return res.redirect(`${process.env.FRONTEND_URL}/login?error=oauth_denied`);
+        return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=oauth_denied`);
       }
 
       try {
-        // Generate JWT tokens - user.id is already a string (CUID)
-        const { accessToken, refreshToken } = generateTokens(
-          user.id,
-          user.email,
-          user.roleId || undefined
-        );
-
-        // Save a refresh token to a database
-        await prisma.refreshToken.create({
-          data: {
-            token: refreshToken,
-            userId: user.id,
-            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-          },
-        });
-
-        // Set the refresh token as httpOnly cookie
-        res.cookie('refreshToken', refreshToken, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
-          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-        });
-
-        // Redirect to frontend with access token and refresh token
-        const redirectUrl = `${process.env.FRONTEND_URL}/auth/callback?token=${accessToken}&refreshToken=${refreshToken}`;
-        res.redirect(redirectUrl);
+        // Tokens are only issued when the client exchanges this code
+        const code = await issueOAuthLoginCode(res, user.id);
+        res.redirect(`${process.env.FRONTEND_URL}/auth/callback?${new URLSearchParams({ code })}`);
       } catch (error) {
         console.error('Error generating tokens for Google OAuth:', error);
-        res.redirect(`${process.env.FRONTEND_URL}/auth/login?error=token_generation_failed`);
+        res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=token_generation_failed`);
       }
     }
   )(req, res);
@@ -884,17 +1095,43 @@ export const googleMobileAuth = async (req: Request, res: Response) => {
       });
     }
 
+    // Web OAuth and the native app may use clients from different Google
+    // projects. Only accept the explicit server-side allowlist so a token for
+    // an unrelated Google application can never be used here.
+    const allowedAudiences = [
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_ANDROID_CLIENT_ID,
+    ]
+      .flatMap(value => value?.split(',') ?? [])
+      .map(value => value.trim())
+      .filter((value, index, values) => value && values.indexOf(value) === index);
+
+    if (allowedAudiences.length === 0) {
+      console.error('Google authentication is not configured');
+      return res.status(500).json({
+        success: false,
+        message: 'Google authentication is not configured',
+      });
+    }
+
     // Verify the ID token with Google
-    const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+    const client = new OAuth2Client();
     
     let ticket;
     try {
       ticket = await client.verifyIdToken({
         idToken,
-        audience: [process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_ANDROID_CLIENT_ID].filter(Boolean) as string[],
+        audience: allowedAudiences,
       });
     } catch (error) {
-      console.error('Google ID token verification failed:', error);
+      const verificationError = error instanceof Error ? error.message : String(error);
+      if (verificationError.includes('Wrong recipient')) {
+        console.error(
+          'Google ID token audience mismatch. Ensure GOOGLE_ANDROID_CLIENT_ID matches the mobile app EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID.'
+        );
+      } else {
+        console.error('Google ID token verification failed:', verificationError);
+      }
       return res.status(401).json({
         success: false,
         message: 'Invalid or expired Google ID token',
@@ -1014,25 +1251,267 @@ export const googleMobileAuth = async (req: Request, res: Response) => {
   }
 };
 
-// Apple OAuth - web redirect (not used for mobile)
-export const appleAuth = (req: Request, res: Response) => {
-  res.status(501).json({
-    success: false,
-    message: 'Apple OAuth web flow not implemented. Use /auth/apple/mobile for mobile apps.',
+// ---------------------------------------------------------------------------
+// Sign in with Apple
+// ---------------------------------------------------------------------------
+
+const appleUserSelect = {
+  id: true,
+  email: true,
+  username: true,
+  subject: true,
+  profileImage: true,
+  roleId: true,
+  isEmailVerified: true,
+  status: true,
+} as const;
+
+class AppleAccountConflictError extends Error {}
+
+/**
+ * Finds the Lifeline account for an Apple identity, linking it to an existing
+ * account with the same verified email or creating a new one. Shared by the
+ * native (iOS) and web flows so both resolve to the same user.
+ */
+const findOrCreateAppleUser = async (
+  appleUserId: string,
+  email: string | undefined,
+  firstName: unknown,
+) => {
+  // The provider subject is authoritative. Only fall back to a verified
+  // Apple email when this identity has not been linked before.
+  let user = await prisma.user.findUnique({
+    where: { subject: appleUserId },
+    select: appleUserSelect,
+  });
+
+  if (!user && email) {
+    user = await prisma.user.findUnique({
+      where: { email },
+      select: appleUserSelect,
+    });
+  }
+
+  if (user) {
+    if (user.subject && user.subject !== appleUserId) {
+      throw new AppleAccountConflictError('This email is already linked to a different Apple account');
+    }
+
+    if (!user.subject) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { subject: appleUserId },
+        select: appleUserSelect,
+      });
+    }
+    return user;
+  }
+
+  // Apple may not provide email on subsequent sign-ins, so we use the appleUserId as fallback
+  const userEmail = email || `${appleUserId}@privaterelay.appleid.com`;
+
+  const baseUsername = (
+    (typeof firstName === 'string' ? firstName : '') ||
+    email?.split('@')[0] ||
+    'appleuser'
+  ).toLowerCase().replace(/[^a-zA-Z0-9]/g, '') || 'appleuser';
+  let username = baseUsername;
+  let counter = 1;
+
+  while (await prisma.user.findUnique({ where: { username } })) {
+    username = `${baseUsername}${counter}`;
+    counter++;
+  }
+
+  return prisma.user.create({
+    data: {
+      username,
+      email: userEmail,
+      subject: appleUserId,
+      isEmailVerified: true, // Apple emails are verified
+      status: 'active',
+    },
+    select: appleUserSelect,
   });
 };
 
-export const appleAuthCallback = (req: Request, res: Response) => {
-  res.status(501).json({
-    success: false,
-    message: 'Apple OAuth web callback not implemented. Use /auth/apple/mobile for mobile apps.',
+const issueAppleSession = async (user: { id: string; email: string; roleId: string | null }) => {
+  const tokens = generateTokens(user.id, user.email, user.roleId || undefined);
+
+  await prisma.refreshToken.create({
+    data: {
+      token: tokens.refreshToken,
+      userId: user.id,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+    },
   });
+
+  return tokens;
+};
+
+const APPLE_AUTHORIZE_URL = 'https://appleid.apple.com/auth/authorize';
+const APPLE_WEB_STATE_COOKIE = 'apple_oauth';
+const APPLE_WEB_STATE_COOKIE_OPTIONS = {
+  httpOnly: true,
+  // Apple returns with a cross-site form POST, so the cookie must be
+  // SameSite=None (which browsers only accept together with Secure).
+  secure: true,
+  sameSite: 'none' as const,
+  path: '/api/auth/apple',
+};
+
+const getAppleWebConfig = () => {
+  const clientId = process.env.APPLE_WEB_SERVICES_ID?.trim();
+  const redirectUri = process.env.APPLE_WEB_REDIRECT_URI?.trim();
+  return clientId && redirectUri ? { clientId, redirectUri } : null;
+};
+
+const readCookie = (req: Request, name: string): string | undefined => {
+  const header = req.headers.cookie;
+  if (!header) return undefined;
+  for (const part of header.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator > 0 && part.slice(0, separator).trim() === name) {
+      try {
+        return decodeURIComponent(part.slice(separator + 1).trim());
+      } catch {
+        return undefined; // malformed percent-encoding: treat as no cookie
+      }
+    }
+  }
+  return undefined;
+};
+
+const safeEqual = (a: string, b: string) => {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+};
+
+const redirectToAppleResult = (res: Response, params: Record<string, string>) => (
+  res.redirect(`${process.env.FRONTEND_URL}/auth/callback?${new URLSearchParams(params)}`)
+);
+
+// Apple OAuth - web: redirect the browser to Apple's consent screen
+export const appleAuth = (req: Request, res: Response) => {
+  const appleConfig = getAppleWebConfig();
+  if (!appleConfig) {
+    console.error('Sign in with Apple (web) is not configured: set APPLE_WEB_SERVICES_ID and APPLE_WEB_REDIRECT_URI');
+    return redirectToAppleResult(res, { error: 'apple_not_configured' });
+  }
+
+  // Apple posts back to the registered return URL's host, and the state
+  // cookie is only sent there. Start on that host (e.g. www) so the flow also
+  // works when the site was opened without "www". The flag stops a loop if a
+  // proxy hides the original Host header.
+  const callbackOrigin = new URL(appleConfig.redirectUri).origin;
+  if (req.get('host') !== new URL(callbackOrigin).host && req.query.canonical !== '1') {
+    return res.redirect(`${callbackOrigin}/api/auth/apple?canonical=1`);
+  }
+
+  const state = randomBytes(32).toString('base64url');
+  const nonce = randomBytes(32).toString('base64url');
+
+  res.cookie(APPLE_WEB_STATE_COOKIE, `${state}.${nonce}`, {
+    ...APPLE_WEB_STATE_COOKIE_OPTIONS,
+    maxAge: 10 * 60 * 1000,
+  });
+
+  const params = new URLSearchParams({
+    client_id: appleConfig.clientId,
+    redirect_uri: appleConfig.redirectUri,
+    // Apple returns the signed id_token directly, so no client secret or
+    // code exchange is needed to identify the user.
+    response_type: 'code id_token',
+    response_mode: 'form_post',
+    scope: 'name email',
+    state,
+    nonce,
+  });
+
+  return res.redirect(`${APPLE_AUTHORIZE_URL}?${params}`);
+};
+
+// Apple OAuth - web: Apple form-POSTs the result here (mounted before CORS in app.ts)
+export const appleAuthCallback = async (req: Request, res: Response) => {
+  const stored = readCookie(req, APPLE_WEB_STATE_COOKIE);
+  res.clearCookie(APPLE_WEB_STATE_COOKIE, APPLE_WEB_STATE_COOKIE_OPTIONS);
+
+  const { state, id_token: identityToken, user: userJson, error, code: appleCode } = req.body ?? {};
+
+  if (error) {
+    return redirectToAppleResult(res, {
+      error: error === 'user_cancelled_authorize' ? 'apple_cancelled' : 'apple_failed',
+    });
+  }
+
+  const [expectedState, expectedNonce] = stored?.split('.') ?? [];
+  if (
+    !expectedState ||
+    !expectedNonce ||
+    typeof state !== 'string' ||
+    typeof identityToken !== 'string' ||
+    !safeEqual(state, expectedState)
+  ) {
+    return redirectToAppleResult(res, { error: 'apple_failed' });
+  }
+
+  try {
+    const payload = await verifyAppleIdentityToken(identityToken);
+    if (typeof payload.nonce !== 'string' || !safeEqual(payload.nonce, expectedNonce)) {
+      return redirectToAppleResult(res, { error: 'apple_failed' });
+    }
+
+    // Apple sends the user's name only on the first authorization, as JSON.
+    let firstName: unknown;
+    if (typeof userJson === 'string') {
+      try {
+        firstName = JSON.parse(userJson)?.name?.firstName;
+      } catch {
+        firstName = undefined;
+      }
+    }
+
+    const user = await findOrCreateAppleUser(payload.sub, payload.email, firstName);
+    if (typeof appleCode === 'string' && appleCode) {
+      await storeAppleRefreshToken(user.id, appleCode, payload.aud);
+    }
+    // Tokens are only issued when the client exchanges this code
+    const code = await issueOAuthLoginCode(res, user.id);
+
+    return redirectToAppleResult(res, { code });
+  } catch (error) {
+    if (error instanceof AppleAccountConflictError) {
+      return redirectToAppleResult(res, { error: 'apple_account_conflict' });
+    }
+    if (error instanceof AppleIdentityConfigurationError) {
+      console.error('Apple authentication is not configured:', error.message);
+      return redirectToAppleResult(res, { error: 'apple_not_configured' });
+    }
+    console.error('Apple web auth error:', error);
+    return redirectToAppleResult(res, { error: 'apple_failed' });
+  }
 };
 
 // Apple Mobile Authentication - For mobile apps using identity tokens
+const storeAppleRefreshToken = async (userId: string, code: string, audience: string | string[] | undefined) => {
+  const clientId = Array.isArray(audience) ? audience[0] : audience;
+  if (!clientId) return;
+  try {
+    const appleRefreshToken = await exchangeAppleAuthorizationCode(code, clientId);
+    if (!appleRefreshToken) return;
+    await prisma.user.update({
+      where: { id: userId },
+      data: { appleRefreshToken: encryptAppleToken(appleRefreshToken), appleClientId: clientId },
+    });
+  } catch (error) {
+    console.error('Could not store the Apple refresh token:', error instanceof Error ? error.message : error);
+  }
+};
+
 export const appleMobileAuth = async (req: Request, res: Response) => {
   try {
-    const { identityToken, firstName, lastName } = req.body;
+    const { identityToken, firstName, authorizationCode, nonce } = req.body;
 
     if (!identityToken) {
       return res.status(400).json({
@@ -1041,140 +1520,63 @@ export const appleMobileAuth = async (req: Request, res: Response) => {
       });
     }
 
-    // Decode the Apple identity token (JWT) to extract claims
-    // Apple identity tokens are JWTs signed by Apple's keys
-    let decoded: any;
+    let payload;
     try {
-      // Apple tokens are JWTs - decode to get the payload
-      // In production, you should verify the signature against Apple's public keys
-      // For now, we decode and verify essential claims
-      decoded = jwt.decode(identityToken, { complete: true });
-      if (!decoded || !decoded.payload) {
-        throw new Error('Failed to decode token');
-      }
+      payload = await verifyAppleIdentityToken(identityToken);
     } catch (error) {
-      console.error('Apple identity token decode failed:', error);
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid Apple identity token',
-      });
-    }
-
-    const payload = decoded.payload;
-    const { sub: appleUserId, email } = payload;
-
-    if (!appleUserId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid token payload - Apple user ID not found',
-      });
-    }
-
-    // Verify issuer and audience
-    if (payload.iss !== 'https://appleid.apple.com') {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid token issuer',
-      });
-    }
-
-    // Check token expiration
-    if (payload.exp && payload.exp * 1000 < Date.now()) {
-      return res.status(401).json({
-        success: false,
-        message: 'Apple identity token has expired',
-      });
-    }
-
-    // Try to find user by subject first, then by email
-    let user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { subject: appleUserId },
-          ...(email ? [{ email }] : []),
-        ],
-      },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        subject: true,
-        profileImage: true,
-        roleId: true,
-        isEmailVerified: true,
-        status: true,
-      },
-    });
-
-    if (user) {
-      // User exists, update their Apple subject if not set
-      if (!user.subject) {
-        user = await prisma.user.update({
-          where: { id: user.id },
-          data: { subject: appleUserId },
-          select: {
-            id: true,
-            email: true,
-            username: true,
-            subject: true,
-            profileImage: true,
-            roleId: true,
-            isEmailVerified: true,
-            status: true,
-          },
+      if (error instanceof AppleIdentityConfigurationError) {
+        console.error('Apple authentication is not configured:', error.message);
+        return res.status(503).json({
+          success: false,
+          message: 'Apple authentication is not configured',
         });
       }
-    } else {
-      // Create new user
-      // Apple may not provide email on subsequent sign-ins, so we use the appleUserId as fallback
-      const userEmail = email || `${appleUserId}@privaterelay.appleid.com`;
-      
-      // Generate a unique username
-      const baseUsername = (firstName || email?.split('@')[0] || 'user').toLowerCase().replace(/[^a-zA-Z0-9]/g, '');
-      let username = baseUsername;
-      let counter = 1;
 
-      while (await prisma.user.findUnique({ where: { username } })) {
-        username = `${baseUsername}${counter}`;
-        counter++;
+      if (error instanceof AppleIdentityProviderError) {
+        console.error('Apple identity provider unavailable:', error.message);
+        return res.status(503).json({
+          success: false,
+          message: 'Apple authentication is temporarily unavailable',
+        });
       }
 
-      user = await prisma.user.create({
-        data: {
-          username,
-          email: userEmail,
-          subject: appleUserId,
-          isEmailVerified: true, // Apple emails are verified
-          status: 'active',
-        },
-        select: {
-          id: true,
-          email: true,
-          username: true,
-          subject: true,
-          profileImage: true,
-          roleId: true,
-          isEmailVerified: true,
-          status: true,
-        },
+      console.error('Apple identity token verification failed:', error);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired Apple identity token',
       });
     }
 
-    // Generate JWT tokens for the app
-    const { accessToken, refreshToken } = generateTokens(
-      user.id,
-      user.email,
-      user.roleId || undefined
-    );
+    // A token requested with a nonce carries its SHA-256; only the app that asked knows the raw
+    // value, so a replayed token is refused. Tokens from older app builds carry no nonce.
+    if (payload.nonce !== undefined) {
+      const expected = typeof nonce === 'string' && nonce
+        ? createHash('sha256').update(nonce).digest('hex')
+        : '';
+      if (typeof payload.nonce !== 'string' || !expected || !safeEqual(payload.nonce, expected)) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid or expired Apple identity token',
+        });
+      }
+    }
 
-    // Save refresh token to database
-    await prisma.refreshToken.create({
-      data: {
-        token: refreshToken,
-        userId: user.id,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-      },
-    });
+    let user;
+    try {
+      user = await findOrCreateAppleUser(payload.sub, payload.email, firstName);
+    } catch (error) {
+      if (error instanceof AppleAccountConflictError) {
+        return res.status(409).json({ success: false, message: error.message });
+      }
+      throw error;
+    }
+
+    // Keep an Apple refresh token so deleting the account can revoke it. Never blocks sign-in.
+    if (typeof authorizationCode === 'string' && authorizationCode) {
+      await storeAppleRefreshToken(user.id, authorizationCode, payload.aud);
+    }
+
+    const { accessToken, refreshToken } = await issueAppleSession(user);
 
     // Return tokens and user info to mobile app
     return res.status(200).json({
@@ -1208,7 +1610,7 @@ export const logoutFromAllDevices = async (req: Request, res: Response) => {
     }
 
     const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as JWTPayload;
+    const decoded = jwt.verify(token, config.jwt.secret) as JWTPayload;
 
     // Delete all refresh tokens for this user
     await prisma.refreshToken.deleteMany({

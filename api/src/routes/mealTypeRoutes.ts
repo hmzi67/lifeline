@@ -6,6 +6,8 @@ import {
   updateMealType,
   deleteMealType
 } from '../controllers/mealTypeController.js';
+import authenticate from '../middleware/authenticate.js';
+import authorize from '../middleware/authorize.js';
 
 const router = Router();
 
@@ -16,12 +18,12 @@ router.get('/', getAllMealTypes);
 router.get('/:id', getMealTypeById);
 
 // POST /api/meal-types - Create new meal type
-router.post('/', createMealType);
+router.post('/', authenticate, authorize(['admin']), createMealType);
 
 // PUT /api/meal-types/:id - Update meal type
-router.put('/:id', updateMealType);
+router.put('/:id', authenticate, authorize(['admin']), updateMealType);
 
 // DELETE /api/meal-types/:id - Delete meal type
-router.delete('/:id', deleteMealType);
+router.delete('/:id', authenticate, authorize(['admin']), deleteMealType);
 
 export default router;

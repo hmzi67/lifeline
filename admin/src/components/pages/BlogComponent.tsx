@@ -136,9 +136,9 @@ const BlogComponent: React.FC = () => {
 
     return (
         <div className="space-y-8">
-            <div className="bg-white rounded-2xl shadow-lg p-8">
+            <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-8">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-8">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
                     <div className="flex items-center gap-4">
                         <div className="p-3 bg-gradient-to-r from-blue-100 to-cyan-100 rounded-xl">
                             <FileText className="w-6 h-6 text-blue-600" />
@@ -285,6 +285,8 @@ const BlogComponent: React.FC = () => {
                                                         size="sm"
                                                         className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                                                         onClick={() => handleEdit(blog)}
+                                                        aria-label="Edit"
+                                                        title="Edit"
                                                     >
                                                         <Edit className="w-4 h-4" />
                                                     </Button>
@@ -293,6 +295,8 @@ const BlogComponent: React.FC = () => {
                                                         size="sm"
                                                         className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                                         onClick={() => handleDelete(blog.id)}
+                                                        aria-label="Delete"
+                                                        title="Delete"
                                                     >
                                                         <Trash2 className="w-4 h-4" />
                                                     </Button>

@@ -6,6 +6,8 @@ import {
   updateExerciseDetail,
   deleteExerciseDetail
 } from '../controllers/exerciseDetailController.js';
+import authenticate from '../middleware/authenticate.js';
+import authorize from '../middleware/authorize.js';
 
 const router = Router();
 
@@ -16,12 +18,12 @@ router.get('/exercise/:exerciseId', getExerciseDetails);
 router.get('/:id', getExerciseDetailById);
 
 // POST /api/exercise-details - Create exercise detail
-router.post('/', createExerciseDetail);
+router.post('/', authenticate, authorize(['admin']), createExerciseDetail);
 
 // PUT /api/exercise-details/:id - Update exercise detail
-router.put('/:id', updateExerciseDetail);
+router.put('/:id', authenticate, authorize(['admin']), updateExerciseDetail);
 
 // DELETE /api/exercise-details/:id - Delete exercise detail
-router.delete('/:id', deleteExerciseDetail);
+router.delete('/:id', authenticate, authorize(['admin']), deleteExerciseDetail);
 
 export default router;

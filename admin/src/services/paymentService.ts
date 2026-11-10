@@ -1,17 +1,4 @@
-import { api } from "./api";
-
-export interface CreatePaymentIntentRequest {
-  amount: number;
-  currency?: string;
-  planId?: string;
-  planName?: string;
-  paymentMethodId?: string;
-}
-
-export interface CreatePaymentIntentResponse {
-  clientSecret: string;
-  paymentIntentId: string;
-}
+import api from "@/lib/axios";
 
 export interface CreateSubscriptionPaymentRequest {
   userId: string;
@@ -21,43 +8,7 @@ export interface CreateSubscriptionPaymentRequest {
   status?: "PENDING" | "COMPLETED" | "FAILED" | "CANCELLED";
 }
 
-export interface ConfirmPaymentRequest {
-  paymentIntentId: string;
-  paymentMethodId: string;
-}
-
-export interface ConfirmPaymentResponse {
-  success: boolean;
-  subscriptionId?: string;
-  message?: string;
-}
-
 class PaymentService {
-  /**
-   * Create a payment intent on the server
-   * Note: This requires backend implementation for Stripe payment intent creation
-   */
-  async createPaymentIntent(
-    data: CreatePaymentIntentRequest
-  ): Promise<CreatePaymentIntentResponse> {
-    try {
-      // This endpoint needs to be implemented on the backend
-      const response = await api.post<CreatePaymentIntentResponse>(
-        "/payments/create-intent",
-        {
-          amount: data.amount,
-          currency: data.currency || "usd",
-          planId: data.planId,
-          planName: data.planName,
-        }
-      );
-      return response.data;
-    } catch (error) {
-      console.error("Error creating payment intent:", error);
-      throw error;
-    }
-  }
-
   /**
    * Create a subscription payment record
    */
@@ -69,27 +20,6 @@ class PaymentService {
       return response.data;
     } catch (error) {
       console.error("Error creating subscription payment:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Confirm payment after successful payment method creation
-   */
-  async confirmPayment(
-    data: ConfirmPaymentRequest
-  ): Promise<ConfirmPaymentResponse> {
-    try {
-      const response = await api.post<ConfirmPaymentResponse>(
-        "/payments/confirm",
-        {
-          paymentIntentId: data.paymentIntentId,
-          paymentMethodId: data.paymentMethodId,
-        }
-      );
-      return response.data;
-    } catch (error) {
-      console.error("Error confirming payment:", error);
       throw error;
     }
   }

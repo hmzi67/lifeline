@@ -1,8 +1,16 @@
 // controllers/blog.controller.ts
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 
 const prisma = new PrismaClient();
+
+// Blog authors and commenters are shown publicly: never include the full user
+// row (password hash, email, phone, one-time codes, store tokens).
+const PUBLIC_PROFILE = { select: { id: true, username: true, displayName: true, profileImage: true } } as const;
+
+/** Status is stored uppercase ("PUBLISHED", "DRAFT"), whatever case the client sends. */
+const normalizeStatus = (status: unknown) => (typeof status === 'string' ? status.toUpperCase() : undefined);
 
 // Blog Category Controllers
 export const createBlogCategory = async (req: Request, res: Response) => {
@@ -83,8 +91,10 @@ export const deleteBlogCategory = async (req: Request, res: Response) => {
 // Blog Controllers
 export const createBlog = async (req: Request, res: Response) => {
   try {
-    const { title, slug, content, excerpt, coverImage, status, authorId, categoryId } = req.body;
-    
+    const { title, slug, content, excerpt, coverImage, status, categoryId } = req.body;
+    // The author is the signed-in admin, never an id taken from the request body.
+    const authorId = (req as AuthenticatedRequest).user?.id;
+
     const blog = await prisma.blog.create({
       data: {
         title,
@@ -92,12 +102,12 @@ export const createBlog = async (req: Request, res: Response) => {
         content,
         excerpt,
         coverImage,
-        status,
+        status: normalizeStatus(status),
         authorId,
         categoryId
       },
       include: {
-        author: true,
+        author: PUBLIC_PROFILE,
         category: true
       }
     });
@@ -114,7 +124,8 @@ export const getAllBlogs = async (req: Request, res: Response) => {
     const skip = (Number(page) - 1) * Number(limit);
     
     const where: any = {};
-    if (status) where.status = status;
+    // Older rows were saved as "published"; match either case.
+    if (typeof status === 'string' && status) where.status = { equals: status, mode: 'insensitive' };
     if (categoryId) where.categoryId = categoryId;
     if (authorId) where.authorId = authorId;
     
@@ -124,7 +135,7 @@ export const getAllBlogs = async (req: Request, res: Response) => {
         skip,
         take: Number(limit),
         include: {
-          author: true,
+          author: PUBLIC_PROFILE,
           category: true,
           _count: { select: { comments: true } }
         },
@@ -156,14 +167,14 @@ export const getBlogById = async (req: Request, res: Response) => {
     const blog = await prisma.blog.findUnique({
       where: { id },
       include: {
-        author: true,
+        author: PUBLIC_PROFILE,
         category: true,
         comments: {
           where: { parentId: null },
           include: {
-            user: true,
+            user: PUBLIC_PROFILE,
             replies: {
-              include: { user: true }
+              include: { user: PUBLIC_PROFILE }
             }
           },
           orderBy: { createdAt: 'desc' }
@@ -188,14 +199,14 @@ export const getBlogBySlug = async (req: Request, res: Response) => {
     const blog = await prisma.blog.findUnique({
       where: { slug },
       include: {
-        author: true,
+        author: PUBLIC_PROFILE,
         category: true,
         comments: {
           where: { parentId: null },
           include: {
-            user: true,
+            user: PUBLIC_PROFILE,
             replies: {
-              include: { user: true }
+              include: { user: PUBLIC_PROFILE }
             }
           },
           orderBy: { createdAt: 'desc' }
@@ -226,11 +237,11 @@ export const updateBlog = async (req: Request, res: Response) => {
         content,
         excerpt,
         coverImage,
-        status,
+        status: normalizeStatus(status),
         categoryId
       },
       include: {
-        author: true,
+        author: PUBLIC_PROFILE,
         category: true
       }
     });
@@ -272,7 +283,7 @@ export const getBlogsByCategory = async (req: Request, res: Response) => {
         skip,
         take: Number(limit),
         include: {
-          author: true,
+          author: PUBLIC_PROFILE,
           category: true,
           _count: { select: { comments: true } }
         },
@@ -308,7 +319,7 @@ export const getBlogsByAuthor = async (req: Request, res: Response) => {
         skip,
         take: Number(limit),
         include: {
-          author: true,
+          author: PUBLIC_PROFILE,
           category: true,
           _count: { select: { comments: true } }
         },
@@ -336,17 +347,27 @@ export const getBlogsByAuthor = async (req: Request, res: Response) => {
 export const createBlogComment = async (req: Request, res: Response) => {
   try {
     const { blogId } = req.params;
-    const { userId, content, parentId } = req.body;
-    
+    const { content, parentId } = req.body;
+    const userId = (req as AuthenticatedRequest).user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const text = typeof content === 'string' ? content.trim() : '';
+    if (!text || text.length > 2000) {
+      return res.status(400).json({ success: false, error: 'Comment must be between 1 and 2000 characters' });
+    }
+
     const comment = await prisma.blogComment.create({
       data: {
         blogId,
         userId,
-        content,
+        content: text,
         parentId
       },
       include: {
-        user: true,
+        user: PUBLIC_PROFILE,
         parent: true
       }
     });
@@ -372,12 +393,12 @@ export const getBlogComments = async (req: Request, res: Response) => {
         skip,
         take: Number(limit),
         include: {
-          user: true,
+          user: PUBLIC_PROFILE,
           replies: {
             include: {
-              user: true,
+              user: PUBLIC_PROFILE,
               replies: {
-                include: { user: true }
+                include: { user: PUBLIC_PROFILE }
               }
             }
           }
@@ -411,12 +432,30 @@ export const updateBlogComment = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { content } = req.body;
+    const user = (req as AuthenticatedRequest).user;
+
+    if (!user) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const existingComment = await prisma.blogComment.findUnique({
+      where: { id },
+      select: { userId: true }
+    });
+
+    if (!existingComment) {
+      return res.status(404).json({ success: false, error: 'Comment not found' });
+    }
+
+    if (existingComment.userId !== user.id && user.role !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Insufficient permissions' });
+    }
     
     const comment = await prisma.blogComment.update({
       where: { id },
       data: { content },
       include: {
-        user: true,
+        user: PUBLIC_PROFILE,
         parent: true
       }
     });
@@ -430,6 +469,24 @@ export const updateBlogComment = async (req: Request, res: Response) => {
 export const deleteBlogComment = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const user = (req as AuthenticatedRequest).user;
+
+    if (!user) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const existingComment = await prisma.blogComment.findUnique({
+      where: { id },
+      select: { userId: true }
+    });
+
+    if (!existingComment) {
+      return res.status(404).json({ success: false, error: 'Comment not found' });
+    }
+
+    if (existingComment.userId !== user.id && user.role !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Insufficient permissions' });
+    }
     
     // Delete all nested replies first
     const deleteReplies = async (commentId: string) => {
@@ -462,9 +519,9 @@ export const getCommentReplies = async (req: Request, res: Response) => {
     const replies = await prisma.blogComment.findMany({
       where: { parentId: id },
       include: {
-        user: true,
+        user: PUBLIC_PROFILE,
         replies: {
-          include: { user: true }
+          include: { user: PUBLIC_PROFILE }
         }
       },
       orderBy: { createdAt: 'asc' }

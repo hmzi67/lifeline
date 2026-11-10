@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import AuthForm from '../../components/auth/AuthForm';
 import AuthLayout from '../../components/auth/AuthLayout';
 import SocialAuthButtons from '../../components/auth/SocialAuthButtons';
@@ -9,7 +9,12 @@ import { getPostLoginRedirectPath } from '@/lib/onboarding';
 const Login: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [searchParams] = useSearchParams();
+  // Social sign-in failures return here as ?error=<message> (see OAuthCallback).
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>((): Record<string, string> => {
+    const oauthError = searchParams.get('error');
+    return oauthError ? { general: oauthError } : {};
+  });
   const { login } = useAuth();
 
   const handleLogin = async (data: Record<string, string | boolean>) => {

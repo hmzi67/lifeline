@@ -11,18 +11,7 @@ export const getMeditationSessions = async (req: Request, res: Response): Promis
     const sessions = await prisma.meditationSession.findMany({
       where: { meditationId },
       include: {
-        meditation: true,
-        userFavoriteMeditations: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        }
+        meditation: true
       }
     });
 
@@ -49,18 +38,7 @@ export const getMeditationSessionById = async (req: Request, res: Response): Pro
     const session = await prisma.meditationSession.findUnique({
       where: { id },
       include: {
-        meditation: true,
-        userFavoriteMeditations: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        }
+        meditation: true
       }
     });
 

@@ -6,7 +6,7 @@ import { uploadFile, handleApiError } from '@/services/crudService';
 export interface FormField {
     name: string;
     label: string;
-    type: 'text' | 'textarea' | 'number' | 'select' | 'file' | 'checkbox' | 'date' | 'time';
+    type: 'text' | 'textarea' | 'number' | 'select' | 'multiselect' | 'file' | 'checkbox' | 'date' | 'time';
     required?: boolean;
     placeholder?: string;
     options?: Array<{ value: string; label: string }>;
@@ -15,6 +15,7 @@ export interface FormField {
     min?: number; // For number inputs
     max?: number; // For number inputs
     disabled?: boolean;
+    hint?: string; // Help text shown under the input
 }
 
 export interface FormModalProps {
@@ -39,6 +40,8 @@ export const FormModal: React.FC<FormModalProps> = ({
     cancelLabel = 'Cancel',
 }) => {
     const [formData, setFormData] = React.useState<Record<string, any>>(initialData);
+    // Search text of each multiselect field.
+    const [multiSearch, setMultiSearch] = React.useState<Record<string, string>>({});
     const [loading, setLoading] = React.useState(false);
     const [submitError, setSubmitError] = React.useState<string | null>(null);
     const [errors, setErrors] = React.useState<Record<string, string>>({});
@@ -222,6 +225,47 @@ export const FormModal: React.FC<FormModalProps> = ({
                                     </select>
                                 )}
 
+                                {field.type === 'multiselect' && (() => {
+                                    const selected: string[] = Array.isArray(formData[field.name]) ? formData[field.name] : [];
+                                    const query = (multiSearch[field.name] || '').toLowerCase();
+                                    const shown = (field.options || []).filter(o => !query || o.label.toLowerCase().includes(query));
+                                    const toggle = (value: string) => handleChange(
+                                        field.name,
+                                        selected.includes(value) ? selected.filter(v => v !== value) : [...selected, value],
+                                    );
+                                    return (
+                                        <div className="border border-gray-300 rounded-lg">
+                                            <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200">
+                                                <input
+                                                    type="text"
+                                                    value={multiSearch[field.name] || ''}
+                                                    onChange={(e) => setMultiSearch(prev => ({ ...prev, [field.name]: e.target.value }))}
+                                                    placeholder={field.placeholder || 'Search...'}
+                                                    disabled={field.disabled || loading}
+                                                    className="flex-1 text-sm outline-none bg-transparent"
+                                                />
+                                                <span className="text-xs text-gray-500 whitespace-nowrap">{selected.length} selected</span>
+                                            </div>
+                                            <div className="max-h-48 overflow-y-auto py-1">
+                                                {shown.length === 0 ? (
+                                                    <p className="px-3 py-2 text-sm text-gray-400">Nothing found</p>
+                                                ) : shown.map(option => (
+                                                    <label key={option.value} className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selected.includes(option.value)}
+                                                            onChange={() => toggle(option.value)}
+                                                            disabled={field.disabled || loading}
+                                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                        />
+                                                        {option.label}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+
                                 {field.type === 'checkbox' && (
                                     <div className="flex items-center">
                                         <input
@@ -303,6 +347,9 @@ export const FormModal: React.FC<FormModalProps> = ({
                                     </div>
                                 )}
 
+                                {field.hint && (
+                                    <p className="text-xs text-gray-500 mt-1">{field.hint}</p>
+                                )}
                                 {errors[field.name] && (
                                     <p className="text-sm text-red-600 mt-1">{errors[field.name]}</p>
                                 )}

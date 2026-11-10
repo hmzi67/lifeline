@@ -195,6 +195,22 @@ const DeleteAccount: React.FC = () => {
                     Enter the email address and password for the account you want
                     to delete.
                   </p>
+                  {/* Google/Apple accounts have no password, so they delete from Profile. */}
+                  <p className="text-gray-600 text-sm mt-2">
+                    Signed up with Google or Apple?{" "}
+                    {isAuthenticated ? (
+                      <Link to="/profile" className="text-primary-600 hover:text-primary-700 font-medium">
+                        Go to your Profile
+                      </Link>
+                    ) : (
+                      <Link to="/login" className="text-primary-600 hover:text-primary-700 font-medium">
+                        Sign in with Google or Apple
+                      </Link>
+                    )}
+                    {isAuthenticated ? "" : ", then open your Profile"} and choose{" "}
+                    <span className="font-medium text-gray-900">Delete Account</span>; you
+                    confirm by typing DELETE instead of a password.
+                  </p>
                 </div>
               </div>
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import GoNext from "@/components/common/GoNext.tsx";
-import menimg from "@/assets/images/question/men_graph.png";
+import menimg from "@/assets/images/question/men_graph.webp";
 import womenimg from "@/assets/images/question/women_graph.png";
 import api from '@/lib/axios';
 

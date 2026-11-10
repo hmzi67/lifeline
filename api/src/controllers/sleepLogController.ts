@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { config } from '../config/index.js';
 
 const prisma = new PrismaClient();
 
@@ -12,13 +13,22 @@ const getUserIdFromToken = (req: Request): string | null => {
   }
   const token = authHeader.substring(7);
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as {
+    const decoded = jwt.verify(token, config.jwt.secret) as {
       userId: string;
     };
     return decoded.userId;
   } catch {
     return null;
   }
+};
+
+// Minutes between bedtime and wake time ("HH:mm"); a wake time before bedtime is the next morning.
+export const minutesSlept = (timeStart: string, timeEnd: string): number => {
+  const toMinutes = (time: string) => {
+    const [hours, minutes] = time.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+  return (toMinutes(timeEnd) - toMinutes(timeStart) + 24 * 60) % (24 * 60);
 };
 
 // Create a new sleep log
@@ -57,7 +67,7 @@ export const createSleepLog = async (req: Request, res: Response) => {
         date: new Date(date),
         timeStart: new Date(`1970-01-01T${timeStart}Z`),
         timeEnd: new Date(`1970-01-01T${timeEnd}Z`),
-        durationMinutes: durationMinutes ?? null,
+        durationMinutes: durationMinutes ?? minutesSlept(timeStart, timeEnd),
         sleepQuality: sleepQuality ?? null,
       },
       include: {
@@ -244,6 +254,13 @@ export const updateSleepLog = async (req: Request, res: Response) => {
     if (timeStart) data.timeStart = new Date(`1970-01-01T${timeStart}Z`);
     if (timeEnd) data.timeEnd = new Date(`1970-01-01T${timeEnd}Z`);
     if (durationMinutes !== undefined) data.durationMinutes = durationMinutes;
+    else if (timeStart || timeEnd) {
+      // Keep the stored length in step with edited times.
+      const hhmm = (time: Date | null) => time?.toISOString().slice(11, 16);
+      const start = timeStart ?? hhmm(existingLog.timeStart);
+      const end = timeEnd ?? hhmm(existingLog.timeEnd);
+      if (start && end) data.durationMinutes = minutesSlept(start, end);
+    }
     if (sleepQuality !== undefined) data.sleepQuality = sleepQuality;
 
     const sleepLog = await prisma.sleepLog.update({

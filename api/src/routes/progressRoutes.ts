@@ -6,8 +6,14 @@ import {
   getUserChallengeProgress,
   getProgressSummary,
 } from '../controllers/progressController.js';
+import authenticate from '../middleware/authenticate.js';
+import requireActiveLicense from '../middleware/requireActiveLicense.js';
 
 const router = Router();
+
+// Progress analytics are part of Lifeline VIP. Apply the check before any
+// controller can load user-specific metrics.
+router.use(authenticate, requireActiveLicense);
 
 // Full progress summary (all stats in one call)
 router.get('/summary', getProgressSummary);

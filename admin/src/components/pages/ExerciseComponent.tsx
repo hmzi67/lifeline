@@ -62,6 +62,8 @@ const FOCUS_AREAS = [
     { label: 'Back', value: 'Back' },
     { label: 'Belly / Core', value: 'Belly / Core' },
     { label: 'Legs', value: 'Legs' },
+    // The app's warm-up lists exercises whose purpose mentions "warm".
+    { label: 'Warm-up', value: 'Warm-up' },
 ];
 
 const DIFFICULTY_OPTIONS: { value: string; label: string; Icon: LucideIcon; iconClass: string; active: string; hover: string }[] = [
@@ -120,13 +122,17 @@ type FormData = typeof DEFAULT_FORM;
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Seeded and app-created rows store lowercase ("beginner"); the admin form uses Title case.
+const normalizeDifficulty = (d: string | null | undefined) =>
+    d ? d.charAt(0).toUpperCase() + d.slice(1).toLowerCase() : '';
+
 const diffBadgeClass = (d: string | null) => {
     const map: Record<string, string> = {
         Beginner: 'bg-green-50 text-green-800 border border-green-300',
         Intermediate: 'bg-yellow-50 text-yellow-800 border border-yellow-300',
         Advanced: 'bg-red-50 text-red-800 border border-red-300',
     };
-    return map[d ?? ''] ?? 'bg-gray-100 text-gray-500 border border-gray-200';
+    return map[normalizeDifficulty(d)] ?? 'bg-gray-100 text-gray-500 border border-gray-200';
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -324,7 +330,7 @@ const ExerciseComponent: React.FC = () => {
             displayDuration: exercise.displayDuration ?? '',
             videoUrl: exercise.videoUrl ?? '',
             image: exercise.image ?? '',
-            difficulty: exercise.difficulty ?? 'Intermediate',
+            difficulty: normalizeDifficulty(exercise.difficulty) || 'Intermediate',
             caloriesBurnEstimate: exercise.caloriesBurnEstimate?.toString() ?? '',
             sets: detail?.sets?.toString() ?? '',
             reps: detail?.reps ?? '',
@@ -439,15 +445,15 @@ const ExerciseComponent: React.FC = () => {
     const filteredExercises = exercises.filter(e => {
         const q = searchQuery.toLowerCase();
         const matchQ = !q || e.name?.toLowerCase().includes(q) || e.purpose?.toLowerCase().includes(q);
-        const matchD = !filterDifficulty || e.difficulty === filterDifficulty;
+        const matchD = !filterDifficulty || normalizeDifficulty(e.difficulty) === filterDifficulty;
         return matchQ && matchD;
     });
 
     const stats = {
         total: exercises.length,
-        beginners: exercises.filter(e => e.difficulty === 'Beginner').length,
-        intermediate: exercises.filter(e => e.difficulty === 'Intermediate').length,
-        advanced: exercises.filter(e => e.difficulty === 'Advanced').length,
+        beginners: exercises.filter(e => normalizeDifficulty(e.difficulty) === 'Beginner').length,
+        intermediate: exercises.filter(e => normalizeDifficulty(e.difficulty) === 'Intermediate').length,
+        advanced: exercises.filter(e => normalizeDifficulty(e.difficulty) === 'Advanced').length,
         avgCal: exercises.length
             ? Math.round(exercises.reduce((s, e) => s + (e.caloriesBurnEstimate ?? 0), 0) / exercises.length)
             : 0,
@@ -462,7 +468,7 @@ const ExerciseComponent: React.FC = () => {
             <div className="flex items-center justify-center min-h-[400px]">
                 <div className="text-center space-y-4">
                     <Loader2 className="w-12 h-12 animate-spin text-red-500 mx-auto" />
-                    <p className="text-gray-500">Loading exercises\u2026</p>
+                    <p className="text-gray-500">Loading exercises…</p>
                 </div>
             </div>
         );
@@ -477,7 +483,7 @@ const ExerciseComponent: React.FC = () => {
             <div className="space-y-6">
 
                 {/* Header */}
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                         <div className="p-3 bg-gradient-to-br from-red-100 to-orange-100 rounded-xl">
                             <Dumbbell className="w-6 h-6 text-red-600" />
@@ -531,18 +537,18 @@ const ExerciseComponent: React.FC = () => {
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
 
                     {/* Panel header with search/filter */}
-                    <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                    <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-gray-100">
                         <div className="flex items-center gap-2">
                             <span className="w-2 h-2 rounded-full bg-teal-400 shadow-[0_0_6px_#2dd4bf] animate-pulse" />
                             <h3 className="font-bold text-gray-900 text-lg">Exercise Library</h3>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-3">
                             <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 gap-2 focus-within:border-red-400 transition-colors">
                                 <Search className="w-4 h-4 text-gray-400 flex-shrink-0" />
                                 <input
                                     value={searchQuery}
                                     onChange={e => setSearchQuery(e.target.value)}
-                                    placeholder="Search exercises\u2026"
+                                    placeholder="Search exercises…"
                                     className="bg-transparent text-sm outline-none w-44 text-gray-700 placeholder:text-gray-400"
                                 />
                             </div>
@@ -610,21 +616,21 @@ const ExerciseComponent: React.FC = () => {
                                                     <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-teal-50 text-teal-700 border border-teal-200">
                                                         {ex.purpose.split(',')[0].trim()}
                                                     </span>
-                                                ) : <span className="text-gray-300 text-sm">\u2014</span>}
+                                                ) : <span className="text-gray-300 text-sm">—</span>}
                                             </td>
                                             <td className="px-6 py-4 text-sm text-gray-600">
                                                 {ex.duration ? (
                                                     <div className="flex items-center gap-1.5">
                                                         <Timer className="w-4 h-4 text-blue-400" />{ex.duration}
                                                     </div>
-                                                ) : <span className="text-gray-300">\u2014</span>}
+                                                ) : <span className="text-gray-300">—</span>}
                                             </td>
                                             <td className="px-6 py-4">
                                                 {ex.difficulty ? (
                                                     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${diffBadgeClass(ex.difficulty)}`}>
                                                         {ex.difficulty}
                                                     </span>
-                                                ) : <span className="text-gray-300 text-sm">\u2014</span>}
+                                                ) : <span className="text-gray-300 text-sm">—</span>}
                                             </td>
                                             <td className="px-6 py-4">
                                                 {ex.caloriesBurnEstimate ? (
@@ -632,7 +638,7 @@ const ExerciseComponent: React.FC = () => {
                                                         <Flame className="w-4 h-4 text-orange-400" />
                                                         <span className="text-sm font-bold text-orange-500">{ex.caloriesBurnEstimate} kcal</span>
                                                     </div>
-                                                ) : <span className="text-gray-300 text-sm">\u2014</span>}
+                                                ) : <span className="text-gray-300 text-sm">—</span>}
                                             </td>
                                             <td className="px-6 py-4">
                                                 <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-100">
@@ -721,7 +727,7 @@ const ExerciseComponent: React.FC = () => {
     // ─────────────────────────────────────────────────────────────────────
 
     const diffOption = DIFFICULTY_OPTIONS.find(d => d.value === formData.difficulty);
-    const previewAreas = formData.focusAreas.join(' \u2022 ') || 'No focus area selected';
+    const previewAreas = formData.focusAreas.join(' • ') || 'No focus area selected';
 
     return (
         <div className="space-y-5 pb-28">
@@ -751,7 +757,7 @@ const ExerciseComponent: React.FC = () => {
                         className="bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white shadow-lg"
                     >
                         {submitLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                        {submitLoading ? 'Saving\u2026' : editingExercise ? 'Update Exercise' : 'Save Exercise'}
+                        {submitLoading ? 'Saving…' : editingExercise ? 'Update Exercise' : 'Save Exercise'}
                     </Button>
                 )}
             </div>
@@ -794,7 +800,7 @@ const ExerciseComponent: React.FC = () => {
                                 <Textarea
                                     value={formData.description}
                                     onChange={e => setField('description', e.target.value)}
-                                    placeholder="Brief description of the exercise and its benefits\u2026"
+                                    placeholder="Brief description of the exercise and its benefits…"
                                     rows={3}
                                     className="resize-none border-gray-200 focus:border-red-400 focus:ring-red-100"
                                 />
@@ -930,7 +936,7 @@ const ExerciseComponent: React.FC = () => {
                                     placeholder="e.g. 3:45 or 45 seconds"
                                     className="border-gray-200 focus:border-red-400"
                                 />
-                                <p className="text-[10px] text-gray-400">How the duration appears to users (e.g. "3:45", "45 sec")</p>
+                                <p className="text-[10px] text-gray-400">How the duration appears to users (e.g. &ldquo;3:45&rdquo;, &ldquo;45 sec&rdquo;)</p>
                             </div>
                         </div>
                     </StepCard>
@@ -989,10 +995,10 @@ const ExerciseComponent: React.FC = () => {
                     {/* Stats grid */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {[
-                            { val: formData.sets || '\u2014', lbl: 'Sets' },
-                            { val: formData.reps || '\u2014', lbl: 'Reps' },
-                            { val: formData.duration ? `${formData.duration} min` : '\u2014', lbl: 'Duration' },
-                            { val: formData.caloriesBurnEstimate ? `${formData.caloriesBurnEstimate} kcal` : '\u2014', lbl: 'Calories' },
+                            { val: formData.sets || '—', lbl: 'Sets' },
+                            { val: formData.reps || '—', lbl: 'Reps' },
+                            { val: formData.duration ? `${formData.duration} min` : '—', lbl: 'Duration' },
+                            { val: formData.caloriesBurnEstimate ? `${formData.caloriesBurnEstimate} kcal` : '—', lbl: 'Calories' },
                         ].map(s => (
                             <div key={s.lbl} className="bg-gray-50 border border-gray-100 rounded-xl p-4 text-center">
                                 <div className="text-2xl font-extrabold text-teal-600">{s.val}</div>
@@ -1071,11 +1077,11 @@ const ExerciseComponent: React.FC = () => {
                 <div className="flex items-center gap-3 min-w-0">
                     <span className="w-2 h-2 rounded-full bg-teal-400 shadow-[0_0_6px_#2dd4bf] animate-pulse flex-shrink-0" />
                     <span className="text-sm font-semibold text-gray-700 truncate max-w-[180px]">{formData.name || 'New Exercise'}</span>
-                    <span className="text-gray-200 hidden md:block">\u2014</span>
+                    <span className="text-gray-200 hidden md:block">—</span>
                     <div className="hidden md:flex gap-2 overflow-x-auto">
                         {formData.sets && formData.reps && (
                             <span className="text-xs bg-teal-50 border border-teal-200 text-teal-700 font-semibold px-2.5 py-1 rounded-full whitespace-nowrap">
-                                {formData.sets} sets \u00D7 {formData.reps} reps
+                                {formData.sets} sets × {formData.reps} reps
                             </span>
                         )}
                         {formData.duration && (
@@ -1107,7 +1113,7 @@ const ExerciseComponent: React.FC = () => {
                     ) : (
                         <Button onClick={handleSubmit} disabled={submitLoading} className="bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white shadow-md">
                             {submitLoading
-                                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving\u2026</>
+                                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving…</>
                                 : <><Save className="w-4 h-4 mr-2" />{editingExercise ? 'Update Exercise' : 'Save Exercise'}</>
                             }
                         </Button>

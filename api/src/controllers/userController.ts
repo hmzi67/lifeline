@@ -3,6 +3,12 @@ import bcrypt from 'bcryptjs';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { getMediaCategory } from '../middleware/upload.js';
+import { config } from '../config/index.js';
+import { deleteUserAndData } from '../services/accountDeletionService.js';
+import { AuthenticatedRequest } from '../types/middlewareTypes.js';
+import { isSuspended } from '../utils/accountAccess.js';
+import { generateTokens } from './authController.js';
+import { isValidTimeZone } from '../services/missedActivityReminders.js';
 
 const prisma = new PrismaClient();
 
@@ -34,8 +40,10 @@ const USER_PUBLIC_SELECT = {
   id: true,
   email: true,
   username: true,
+  displayName: true,
   googleId: true,
   profileImage: true,
+  phone: true,
   isEmailVerified: true,
   subject: true,
   status: true,
@@ -59,7 +67,7 @@ const getUserIdFromAuth = (req: Request): string | null => {
   }
 
   const token = authHeader.substring(7);
-  const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as {
+  const decoded = jwt.verify(token, config.jwt.secret) as {
     userId: string;
   };
 
@@ -78,7 +86,7 @@ export const getCurrentUser = async (req: Request, res: Response) => {
     }
 
     const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as {
+    const decoded = jwt.verify(token, config.jwt.secret) as {
       userId: string;
     };
 
@@ -86,6 +94,7 @@ export const getCurrentUser = async (req: Request, res: Response) => {
       where: { id: decoded.userId },
       select: {
         ...USER_PUBLIC_SELECT,
+        password: true,
         questionnaires: {
           select: {
             id: true,
@@ -117,9 +126,11 @@ export const getCurrentUser = async (req: Request, res: Response) => {
       });
     }
 
+    // Only whether a password exists (it decides how account deletion is confirmed).
+    const { password, ...profile } = user;
     res.status(200).json({
       success: true,
-      data: { user },
+      data: { user: { ...profile, hasPassword: !!password } },
     });
   } catch (error) {
     console.error('Get current user error:', error);
@@ -301,15 +312,20 @@ export const registerPushToken = async (req: Request, res: Response) => {
       });
     }
 
-    const { expoPushToken, platform } = req.body as {
-      expoPushToken?: string;
+    // `pushToken` is an FCM token; app builds from before FCM send an Expo token as `expoPushToken`.
+    const { pushToken: fcmOrExpoToken, expoPushToken, platform, timezone } = req.body as {
+      pushToken?: unknown;
+      expoPushToken?: unknown;
       platform?: string;
+      /** IANA zone of the device, so evening reminders arrive at the user's 9 PM. */
+      timezone?: unknown;
     };
+    const pushToken = fcmOrExpoToken ?? expoPushToken;
 
-    if (!expoPushToken || typeof expoPushToken !== 'string') {
+    if (typeof pushToken !== 'string' || !pushToken.trim() || pushToken.length > 4096) {
       return res.status(400).json({
         success: false,
-        message: 'expoPushToken is required',
+        message: 'pushToken is required',
       });
     }
 
@@ -320,13 +336,13 @@ export const registerPushToken = async (req: Request, res: Response) => {
         where: { id: `${scope}:push_token` },
         update: {
           key: 'push_token',
-          value: expoPushToken,
+          value: pushToken,
           scope,
         },
         create: {
           id: `${scope}:push_token`,
           key: 'push_token',
-          value: expoPushToken,
+          value: pushToken,
           scope,
         },
       }),
@@ -344,6 +360,13 @@ export const registerPushToken = async (req: Request, res: Response) => {
           scope,
         },
       }),
+      ...(typeof timezone === 'string' && timezone.length <= 64 && isValidTimeZone(timezone)
+        ? [prisma.appSetting.upsert({
+            where: { id: `${scope}:timezone` },
+            update: { value: timezone },
+            create: { id: `${scope}:timezone`, key: 'timezone', value: timezone, scope },
+          })]
+        : []),
     ]);
 
     return res.status(200).json({
@@ -352,9 +375,10 @@ export const registerPushToken = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Register push token error:', error);
-    return res.status(401).json({
+    // Not 401: the app reads that as an expired session and signs the user out.
+    return res.status(500).json({
       success: false,
-      message: 'Invalid token',
+      message: 'Could not register this device for notifications',
     });
   }
 };
@@ -372,8 +396,9 @@ export const getAllUsers = async (req: Request, res: Response) => {
       sortOrder = 'desc',
     } = req.query;
 
-    const pageNum = parseInt(page as string, 10);
-    const limitNum = parseInt(limit as string, 10);
+    // Clamp so a request cannot ask for an unbounded page.
+    const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string, 10) || 10));
     const skip = (pageNum - 1) * limitNum;
 
     // Build where clause for filtering
@@ -546,7 +571,7 @@ export const updateUser = async (req: Request, res: Response) => {
 
     // Hash password if provided
     if (data.password) {
-      data.password = await bcrypt.hash(data.password, 10);
+      data.password = await bcrypt.hash(data.password, 12);
     }
 
     // roleId is a string according to schema, no need for BigInt conversion
@@ -589,6 +614,11 @@ export const updateUser = async (req: Request, res: Response) => {
       },
     });
 
+    // A password reset or suspension by an admin ends the user's sessions.
+    if (data.password || isSuspended(data.status)) {
+      await prisma.refreshToken.deleteMany({ where: { userId } });
+    }
+
     res.status(200).json({
       success: true,
       data: { user },
@@ -628,6 +658,102 @@ export const updateUser = async (req: Request, res: Response) => {
   }
 };
 
+// Fields a user may change on their own profile. Role, status, subject and email
+// stay admin-only; unknown fields are ignored so older app builds keep working.
+const SELF_EDITABLE_FIELDS = ['displayName', 'username', 'profileImage', 'phone'] as const;
+
+// update the authenticated user's own profile
+export const updateOwnProfile = async (req: Request, res: Response) => {
+  const userId = (req as AuthenticatedRequest).user?.id;
+  if (!userId) {
+    return res.status(401).json({ success: false, message: 'Authentication required' });
+  }
+
+  try {
+    const data: Record<string, string> = {};
+    for (const key of SELF_EDITABLE_FIELDS) {
+      const value = req.body[key];
+      if (typeof value === 'string' && value.trim() !== '') {
+        data[key] = value.trim();
+      }
+    }
+
+    if (req.file) {
+      const category = getMediaCategory(req.file.mimetype);
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      data.profileImage = `${baseUrl}/uploads/${category}/${req.file.filename}`;
+    }
+
+    const { password: newPassword, currentPassword } = req.body as {
+      password?: unknown;
+      currentPassword?: unknown;
+    };
+    if (typeof newPassword === 'string' && newPassword !== '') {
+      if (newPassword.length < 8) {
+        return res.status(400).json({
+          success: false,
+          message: 'Password must be at least 8 characters long',
+        });
+      }
+
+      const existing = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { password: true },
+      });
+      // Accounts created through Google/Apple have no password yet and may set one.
+      if (existing?.password) {
+        const matches =
+          typeof currentPassword === 'string' &&
+          (await bcrypt.compare(currentPassword, existing.password));
+        if (!matches) {
+          return res.status(400).json({
+            success: false,
+            message: 'Current password is incorrect',
+          });
+        }
+      }
+      data.password = await bcrypt.hash(newPassword, 12);
+    }
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid fields provided for update',
+      });
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data,
+      select: USER_PUBLIC_SELECT,
+    });
+
+    if (!data.password) {
+      return res.status(200).json({ success: true, data: { user } });
+    }
+
+    // A new password signs out every other session; this device gets a fresh one.
+    const session = generateTokens(user.id, user.email, user.roleId || undefined);
+    await prisma.$transaction([
+      prisma.refreshToken.deleteMany({ where: { userId } }),
+      prisma.refreshToken.create({
+        data: { token: session.refreshToken, userId, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+      }),
+    ]);
+    res.set('Cache-Control', 'no-store');
+    res.status(200).json({ success: true, data: { user, session } });
+  } catch (e: any) {
+    console.error('Update own profile error:', e);
+    if (e.code === 'P2002') {
+      res.status(400).json({ success: false, message: 'Username already exists' });
+    } else if (e.code === 'P2025') {
+      res.status(404).json({ success: false, message: 'User not found' });
+    } else {
+      res.status(400).json({ success: false, message: 'Failed to update profile' });
+    }
+  }
+};
+
 // Admin: create user
 export const createUser = async (req: Request, res: Response) => {
   try {
@@ -635,6 +761,7 @@ export const createUser = async (req: Request, res: Response) => {
       'email',
       'username',
       'profileImage',
+      'phone',
       'subject',
       'password',
       'status',
@@ -650,7 +777,7 @@ export const createUser = async (req: Request, res: Response) => {
 
     // Hash password if provided
     if (data.password) {
-      data.password = await bcrypt.hash(data.password, 10);
+      data.password = await bcrypt.hash(data.password, 12);
     }
 
     // Validate roleId if provided
@@ -674,6 +801,7 @@ export const createUser = async (req: Request, res: Response) => {
         username: true,
         googleId: true,
         profileImage: true,
+        phone: true,
         isEmailVerified: true,
         subject: true,
         status: true,
@@ -732,16 +860,7 @@ export const deleteUser = async (req: Request, res: Response) => {
     // ID is a string (cuid) according to schema, no need for BigInt conversion
     const userId = id;
 
-    const user = await prisma.user.delete({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        profileImage: true,
-        createdAt: true,
-      },
-    });
+    const user = await deleteUserAndData(prisma, userId);
 
     res.status(200).json({
       success: true,
@@ -764,10 +883,75 @@ export const deleteUser = async (req: Request, res: Response) => {
   }
 };
 
-// delete the authenticated user's own account after email + password confirmation
+// GET /api/user/export - everything stored about the caller, as JSON (no passwords, codes or tokens)
+export const exportOwnData = async (req: Request, res: Response) => {
+  const userId = (req as AuthenticatedRequest).user?.id;
+  if (!userId) {
+    return res.status(401).json({ success: false, message: 'Authentication required' });
+  }
+
+  try {
+    const own = { where: { userId } };
+    const [
+      profile, questionnaire, waterIntake, waterGoals, sleepLogs, fastingLogs, medications,
+      cheatDays, foodLogs, dietMealLogs, weightLogs, dailyRoutines, activeDietPlans,
+      activeExercisePlans, exerciseProgress, challenges, payments, favoriteMeditations, favoriteExercisePlans,
+      favoriteSleepItems, notifications,
+    ] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId }, select: USER_PUBLIC_SELECT }),
+      prisma.questionnaire.findMany(own),
+      prisma.waterIntakeLog.findMany(own),
+      prisma.userWaterGoal.findMany(own),
+      prisma.sleepLog.findMany(own),
+      prisma.fastingLog.findMany(own),
+      prisma.medication.findMany({ ...own, include: { medicationReminders: true, intakes: true } }),
+      prisma.cheatDay.findMany(own),
+      prisma.foodLog.findMany(own),
+      prisma.dietMealLog.findMany(own),
+      prisma.weightLog.findMany(own),
+      prisma.userDailyRoutine.findMany(own),
+      prisma.userActiveDietPlan.findMany({ ...own, include: { diet: { select: { name: true } } } }),
+      prisma.userActiveExercisePlan.findMany({ ...own, include: { plan: { select: { name: true } } } }),
+      prisma.userExerciseProgress.findMany(own),
+      prisma.userChallenge.findMany({ ...own, include: { challenge: { select: { name: true } } } }),
+      prisma.subscriptionPayment.findMany({
+        ...own,
+        select: { id: true, planName: true, amount: true, method: true, status: true, createdAt: true, currentPeriodEnd: true },
+      }),
+      prisma.userFavoriteMeditation.findMany(own),
+      prisma.userFavoriteExercisePlan.findMany({ ...own, include: { plan: { select: { name: true } } } }),
+      prisma.userFavoriteSleepItem.findMany({
+        ...own,
+        include: { sound: { select: { name: true } }, story: { select: { title: true } } },
+      }),
+      prisma.notification.findMany(own),
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        exportedAt: new Date().toISOString(),
+        profile, questionnaire, waterIntake, waterGoals, sleepLogs, fastingLogs, medications,
+        cheatDays, foodLogs, dietMealLogs, weightLogs, dailyRoutines, activeDietPlans,
+        activeExercisePlans, exerciseProgress, challenges, payments, favoriteMeditations, favoriteExercisePlans,
+        favoriteSleepItems, notifications,
+      },
+    });
+  } catch (error) {
+    console.error('Export own data error:', error);
+    res.status(500).json({ success: false, message: 'Failed to export your data' });
+  }
+};
+
+/** Typed by accounts that sign in with Google/Apple and so have no password to re-enter. */
+export const ACCOUNT_DELETION_PHRASE = 'DELETE';
+
+// Delete the caller's own account (DELETE /account and DELETE /profile/:id).
+// A valid token alone is not enough: password accounts re-enter their
+// password; Google/Apple accounts type ACCOUNT_DELETION_PHRASE.
 export const deleteOwnAccount = async (req: Request, res: Response) => {
   try {
-    const userId = getUserIdFromAuth(req);
+    const userId = (req as AuthenticatedRequest).user?.id;
 
     if (!userId) {
       return res.status(401).json({
@@ -776,14 +960,11 @@ export const deleteOwnAccount = async (req: Request, res: Response) => {
       });
     }
 
-    const { email, password } = (req.body ?? {}) as { email?: string; password?: string };
-
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email and password are required to delete your account',
-      });
-    }
+    const { email, password, confirmation } = (req.body ?? {}) as {
+      email?: unknown;
+      password?: unknown;
+      confirmation?: unknown;
+    };
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -797,31 +978,34 @@ export const deleteOwnAccount = async (req: Request, res: Response) => {
       });
     }
 
-    if (user.email.toLowerCase() !== email.trim().toLowerCase()) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password',
-      });
-    }
-
-    if (!user.password) {
+    if (user.password) {
+      if (typeof password !== 'string' || !password) {
+        return res.status(400).json({
+          success: false,
+          message: 'Enter your password to delete your account',
+          code: 'PASSWORD_REQUIRED',
+        });
+      }
+      const emailMatches = email === undefined
+        || (typeof email === 'string' && user.email.toLowerCase() === email.trim().toLowerCase());
+      // 403, not 401: the user is signed in and the confirmation was wrong. A 401 makes the
+      // app treat the session as expired and sign the user out.
+      if (!emailMatches || !(await bcrypt.compare(password, user.password))) {
+        return res.status(403).json({
+          success: false,
+          message: 'Incorrect password. Your account was not deleted.',
+          code: 'INVALID_PASSWORD',
+        });
+      }
+    } else if (confirmation !== ACCOUNT_DELETION_PHRASE) {
       return res.status(400).json({
         success: false,
-        message:
-          'This account signs in with Google and has no password. Please contact support to delete it.',
+        message: `Type ${ACCOUNT_DELETION_PHRASE} to confirm deleting your account`,
+        code: 'CONFIRMATION_REQUIRED',
       });
     }
 
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-
-    if (!isPasswordValid) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password',
-      });
-    }
-
-    await prisma.user.delete({ where: { id: user.id } });
+    await deleteUserAndData(prisma, user.id);
 
     res.status(200).json({
       success: true,
@@ -892,9 +1076,11 @@ export const getUserWithRelations = async (req: Request, res: Response) => {
       });
     }
 
+    // Admins see the profile, never credentials or stored provider tokens.
+    const { password, otp, otpPurpose, otpExpiresAt, otpAttempts, appleRefreshToken, appleClientId, ...safeUser } = user;
     res.status(200).json({
       success: true,
-      data: { user },
+      data: { user: { ...safeUser, hasPassword: !!password } },
     });
   } catch (error) {
     console.error('Get user with relations error:', error);

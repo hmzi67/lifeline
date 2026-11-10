@@ -4,6 +4,7 @@ import {
     deleteFastingLog,
     getFastingLogById,
     getFastingStats,
+  getActiveFastingLog,
     getUserFastingLogs,
     updateFastingLog,
 } from '../controllers/fastingLogController.js';
@@ -16,6 +17,7 @@ const fastingRoutes = Router();
 fastingRoutes.post('/', authenticate, createFastingLog);
 fastingRoutes.get('/', authenticate, getUserFastingLogs);
 fastingRoutes.get('/stats', authenticate, getFastingStats);
+fastingRoutes.get('/active', authenticate, getActiveFastingLog);
 fastingRoutes.get('/:id', authenticate, getFastingLogById);
 fastingRoutes.put('/:id', authenticate, updateFastingLog);
 fastingRoutes.delete('/:id', authenticate, deleteFastingLog);

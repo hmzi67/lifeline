@@ -5,3 +5,8 @@ http-test/
 client/.env
 api/.env
 .env
+
+
+
+SubscriptionKey_T63K97P5RH.p8
+docker-compose.yml

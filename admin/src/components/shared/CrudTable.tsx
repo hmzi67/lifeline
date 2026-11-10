@@ -89,9 +89,9 @@ export function CrudTable<T extends { id: string }>({
 
     return (
         <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-lg p-8">
+            <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-8">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-6">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
                     <div className="flex items-center gap-4">
                         {Icon && (
                             <div className="p-3 bg-gradient-to-r from-blue-100 to-cyan-100 rounded-xl">
@@ -202,6 +202,8 @@ export function CrudTable<T extends { id: string }>({
                                                                     size="sm"
                                                                     className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                                                                     onClick={() => onEdit(row)}
+                                                                    aria-label="Edit"
+                                                                    title="Edit"
                                                                 >
                                                                     <Edit className="w-4 h-4" />
                                                                 </Button>
@@ -213,6 +215,8 @@ export function CrudTable<T extends { id: string }>({
                                                                     size="sm"
                                                                     className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                                                     onClick={() => onDelete(row)}
+                                                                    aria-label="Delete"
+                                                                    title="Delete"
                                                                 >
                                                                     <Trash2 className="w-4 h-4" />
                                                                 </Button>
@@ -266,7 +270,7 @@ export function CrudTable<T extends { id: string }>({
                             <p className="text-gray-500 text-lg">{emptyMessage}</p>
                             {searchTerm && (
                                 <p className="text-gray-400 text-sm mt-2">
-                                    No results found for "{searchTerm}"
+                                    No results found for &ldquo;{searchTerm}&rdquo;
                                 </p>
                             )}
                         </div>

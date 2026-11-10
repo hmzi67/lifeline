@@ -4,7 +4,7 @@ import {
     ImageIcon, FileText, ChevronRight, ChevronLeft, Target, Salad, Clock,
     Eye, RotateCcw, Save, X, UtensilsCrossed, Utensils, Check,
     List, Info, Dumbbell, TrendingDown, TrendingUp,
-    PlusCircle, ArrowLeft, LayoutList, BookOpen, Users,
+    PlusCircle, ArrowLeft, LayoutList, BookOpen, Users, Copy,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import api from '@/lib/axios';
+import { uploadFile } from '@/services/crudService';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -31,6 +32,8 @@ interface Ingredient {
 
 interface MealDraft {
     id: number;
+    /** Set for a meal already saved on the server, so saving updates it instead of adding a copy. */
+    serverId?: string;
     mealTypeId: string;
     mealTypeName: string;
     name: string;
@@ -70,6 +73,7 @@ interface DietPlanApi {
     image: string | null;
     cuisineName?: string | null;
     gender?: string | null;
+    goal?: string | null;
     createdAt?: string;
     userDietPlans?: { user: { id: string; email: string; username: string } }[];
     challengeDiets?: { challenge: { id: string; name: string; status: string } }[];
@@ -204,6 +208,24 @@ const SectionCard: React.FC<SectionCardProps> = ({ children, className = '' }) =
 // DietComponent
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Splits a saved recipe back into ingredients and instructions (the reverse of
+// buildRecipeWithIngredients), so editing a plan doesn't nest "Instructions:" on every save.
+const parseRecipe = (recipe: string | null | undefined): { ingredients: Ingredient[]; instructions: string } => {
+    const text = (recipe || '').replace(/\r\n/g, '\n');
+    if (!text.startsWith('Ingredients:\n')) {
+        return { ingredients: [], instructions: text.startsWith('Instructions:\n') ? text.slice('Instructions:\n'.length) : text };
+    }
+    const [ingredientBlock, ...rest] = text.slice('Ingredients:\n'.length).split('\n\nInstructions:\n');
+    let id = Date.now();
+    const ingredients = ingredientBlock.split('\n').filter(line => line.startsWith('- ')).map(line => {
+        const [name, amount = ''] = line.slice(2).split(/:\s*/, 2);
+        const parts = amount.trim().split(/\s+/);
+        const unit = parts.length > 1 && UNITS.includes(parts[parts.length - 1]) ? parts.pop()! : 'grams';
+        return { id: id++, name: name.trim(), quantity: parts.join(' '), unit };
+    });
+    return { ingredients, instructions: rest.join('\n\nInstructions:\n') };
+};
+
 type View = 'list' | 'create';
 type Tab = 'plan-info' | 'meals' | 'preview';
 
@@ -219,7 +241,12 @@ const DietComponent: React.FC = () => {
 
     // Create/edit state
     const [planInfo, setPlanInfo] = useState<PlanInfo>(emptyPlanInfo());
-    const [meals, setMeals] = useState<MealDraft[]>([]);
+    // Meals for each day of the plan (Day 1, Day 2, ...); the editor shows one day at a time.
+    const [mealsByDay, setMealsByDay] = useState<Record<number, MealDraft[]>>({});
+    const [activeDay, setActiveDay] = useState(1);
+    const [copyFromDay, setCopyFromDay] = useState('');
+    // When editing, the saved days must load before a save, or saving would drop them.
+    const [scheduleState, setScheduleState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
     const [currentMeal, setCurrentMeal] = useState<MealDraft>(emptyMeal());
     const [mealTypes, setMealTypes] = useState<MealType[]>([]);
     const [editingPlan, setEditingPlan] = useState<DietPlanApi | null>(null);
@@ -233,6 +260,35 @@ const DietComponent: React.FC = () => {
     const ingCounter = useRef(100);
     const planImageRef = useRef<HTMLInputElement>(null);
     const mealImageRef = useRef<HTMLInputElement>(null);
+
+    const meals = mealsByDay[activeDay] ?? [];
+    const setMeals = (update: (prev: MealDraft[]) => MealDraft[]) =>
+        setMealsByDay(prev => ({ ...prev, [activeDay]: update(prev[activeDay] ?? []) }));
+    const planDayCount = () => {
+        const n = parseInt(planInfo.duration === 'custom' ? planInfo.customDays : planInfo.duration, 10);
+        return Number.isFinite(n) && n > 0 ? Math.min(n, 366) : 1;
+    };
+    const dayNumbers = Array.from({ length: planDayCount() }, (_, i) => i + 1);
+    const filledDays = Object.keys(mealsByDay).map(Number).filter(d => (mealsByDay[d]?.length ?? 0) > 0).sort((a, b) => a - b);
+    const totalMeals = filledDays.reduce((sum, d) => sum + mealsByDay[d].length, 0);
+    // Days that still have meals after the duration was shortened: shown in red, block saving.
+    const lateDays = filledDays.filter(d => d > planDayCount());
+    // The day picker shows one week at a time: 60 day chips at once was too much to scan.
+    const weekCount = Math.ceil(planDayCount() / 7);
+    const activeWeek = Math.min(Math.ceil(activeDay / 7), Math.max(weekCount, 1));
+    const daysOfWeek = (week: number) =>
+        dayNumbers.filter(d => d > (week - 1) * 7 && d <= week * 7);
+    const filledInWeek = (week: number) => daysOfWeek(week).filter(d => (mealsByDay[d]?.length ?? 0) > 0).length;
+    const filledInPlan = filledDays.filter(d => d <= planDayCount()).length;
+    const nextEmptyDay = dayNumbers.find(d => d > activeDay && !(mealsByDay[d]?.length))
+        ?? dayNumbers.find(d => !(mealsByDay[d]?.length));
+    const goToDay = (day: number) => {
+        setActiveDay(day);
+        setCopyFromDay('');
+    };
+    const lateDaysMessage = lateDays.length
+        ? `Day${lateDays.length === 1 ? '' : 's'} ${lateDays.join(', ')} ${lateDays.length === 1 ? 'has' : 'have'} meals, but the plan is only ${planDayCount()} days long. Increase the duration, or open ${lateDays.length === 1 ? 'that day' : 'those days'} (in red) and remove the meals.`
+        : '';
 
     // ── Effects ───────────────────────────────────────────────────────────────
     useEffect(() => {
@@ -345,10 +401,37 @@ const DietComponent: React.FC = () => {
         setMeals(prev => prev.filter(m => m.id !== id));
     };
 
+    // Adds a copy of another day's meals to the day being edited (nothing is overwritten).
+    const copyMealsFromDay = () => {
+        const from = Number(copyFromDay);
+        const source = mealsByDay[from] ?? [];
+        if (!from || from === activeDay || source.length === 0) return;
+        // Meals this day already has (same type, name, calories and portion) are not copied again,
+        // so copying twice doesn't duplicate anything.
+        const sameMeal = (m: MealDraft) => [m.mealTypeId, m.name.trim().toLowerCase(), m.calories.trim(), m.portionSize.trim().toLowerCase()].join('|');
+        const existing = new Set(meals.map(sameMeal));
+        const toAdd = source.filter(m => !existing.has(sameMeal(m)));
+        setCopyFromDay('');
+        if (toAdd.length === 0) {
+            showToast(`Day ${activeDay} already has all of Day ${from}'s meals.`, 'error');
+            return;
+        }
+        const stamp = Date.now();
+        setMeals(prev => [
+            ...prev,
+            ...toAdd.map((m, i) => ({ ...m, id: stamp + i, serverId: undefined, ingredients: m.ingredients.map(x => ({ ...x })) })),
+        ]);
+        const skipped = source.length - toAdd.length;
+        showToast(`Copied ${toAdd.length} meal${toAdd.length === 1 ? '' : 's'} from Day ${from} to Day ${activeDay}${skipped ? ` (${skipped} already there)` : ''}.`);
+    };
+
     // ── Reset ─────────────────────────────────────────────────────────────────
     const resetAll = () => {
         setPlanInfo(emptyPlanInfo());
-        setMeals([]);
+        setMealsByDay({});
+        setActiveDay(1);
+        setCopyFromDay('');
+        setScheduleState('idle');
         setCurrentMeal(emptyMeal());
         setEditingPlan(null);
         setSaveError('');
@@ -372,7 +455,7 @@ const DietComponent: React.FC = () => {
         const customDays = durVal === 'custom' ? durationNum : '';
 
         setPlanInfo({
-            goal: '',
+            goal: plan.goal || '',
             dietType: '',
             name: plan.name || '',
             description: plan.description || '',
@@ -388,6 +471,44 @@ const DietComponent: React.FC = () => {
         });
 
         setView('create');
+        loadSchedule(plan.id);
+    };
+
+    const loadSchedule = async (planId: string) => {
+        setScheduleState('loading');
+        try {
+            const res = await api.get(`/diet-plans/${planId}/schedule`);
+            const byDay: Record<number, MealDraft[]> = {};
+            let stamp = Date.now();
+            for (const day of res.data?.data || []) {
+                byDay[day.dayNumber] = (day.dietPlanMeals || []).map((m: any) => {
+                    const { ingredients, instructions } = parseRecipe(m.recipe);
+                    return {
+                        ...emptyMeal(),
+                        id: stamp++,
+                        serverId: m.id,
+                        mealTypeId: m.mealTypeId,
+                        mealTypeName: m.mealType?.name || '',
+                        name: m.name || '',
+                        calories: m.calories != null ? String(m.calories) : '',
+                        portionSize: m.portionSize || '',
+                        protein: m.protein != null ? String(m.protein) : '',
+                        carbs: m.carbs != null ? String(m.carbs) : '',
+                        fats: m.fats != null ? String(m.fats) : '',
+                        recipe: instructions,
+                        ingredients: ingredients.length ? ingredients : emptyMeal().ingredients,
+                        imagePreview: m.image || '',
+                    };
+                });
+            }
+            setMealsByDay(byDay);
+            const first = Object.keys(byDay).map(Number).sort((a, b) => a - b)[0];
+            if (first) setActiveDay(first);
+            setScheduleState('loaded');
+        } catch (err: any) {
+            setScheduleState('error');
+            setSaveError(err.response?.data?.message || "Couldn't load this plan's meals. Reload the page before saving.");
+        }
     };
 
     // ── Delete plan ───────────────────────────────────────────────────────────
@@ -397,8 +518,8 @@ const DietComponent: React.FC = () => {
             await api.delete(`/diet-plans/${id}`);
             showToast('Diet plan deleted.');
             fetchDietPlans();
-        } catch {
-            showToast('Failed to delete diet plan.', 'error');
+        } catch (err: any) {
+            showToast(err.response?.data?.message || 'Failed to delete diet plan.', 'error');
         }
     };
 
@@ -409,64 +530,81 @@ const DietComponent: React.FC = () => {
             setActiveTab('plan-info');
             return;
         }
+        if (editingPlan && scheduleState !== 'loaded') {
+            showToast(scheduleState === 'loading' ? "This plan's meals are still loading." : "This plan's meals didn't load. Reload the page before saving.", 'error');
+            return;
+        }
+        if (lateDaysMessage) {
+            setSaveError(lateDaysMessage);
+            showToast(lateDaysMessage, 'error');
+            setActiveTab('meals');
+            return;
+        }
 
         setSaving(true);
         setSaveError('');
 
+        // Set once a new plan row exists, so a failed schedule save can remove it
+        // instead of leaving an empty duplicate in the list.
+        let createdPlanId: string | null = null;
+
         try {
+            // Upload new images first; a meal or plan keeps its saved image URL otherwise.
+            const planImage = planInfo.imageFile ? await uploadFile(planInfo.imageFile) : (planInfo.imagePreview || null);
+            const days = [];
+            for (const dayNumber of filledDays) {
+                const dayMeals = [];
+                for (const meal of mealsByDay[dayNumber]) {
+                    dayMeals.push({
+                        id: meal.serverId,
+                        mealTypeId: meal.mealTypeId,
+                        name: meal.name,
+                        calories: meal.calories ? parseInt(meal.calories, 10) : null,
+                        portionSize: meal.portionSize || null,
+                        protein: meal.protein ? parseFloat(meal.protein) : null,
+                        carbs: meal.carbs ? parseFloat(meal.carbs) : null,
+                        fats: meal.fats ? parseFloat(meal.fats) : null,
+                        image: meal.imageFile ? await uploadFile(meal.imageFile) : (meal.imagePreview || null),
+                        recipe: buildRecipeWithIngredients(meal) || null,
+                    });
+                }
+                days.push({ dayNumber, meals: dayMeals });
+            }
+
             const durationDays = planInfo.duration === 'custom' ? planInfo.customDays : planInfo.duration;
             const submitData = {
                 name: planInfo.name,
                 calories: planInfo.caloriesPerDay ? parseInt(planInfo.caloriesPerDay) : undefined,
                 duration: durationDays ? `${durationDays} days` : undefined,
                 description: planInfo.description || undefined,
-                image: planInfo.imagePreview && !planInfo.imageFile ? planInfo.imagePreview : undefined,
+                image: planImage,
                 cuisineName: planInfo.cuisineName || undefined,
                 gender: planInfo.gender || undefined,
+                goal: planInfo.goal || null,
             };
 
             let planId: string;
-
             if (editingPlan) {
                 await api.put(`/diet-plans/${editingPlan.id}`, submitData);
                 planId = editingPlan.id;
-                showToast('Diet plan updated successfully.');
             } else {
                 const res = await api.post('/diet-plans', submitData);
                 planId = res.data?.data?.id;
-                showToast('Diet plan created successfully.');
+                createdPlanId = planId || null;
             }
 
-            // For new plans: create a single day and save all meals under it
-            if (planId && meals.length > 0 && !editingPlan) {
-                const dayRes = await api.post('/diet-plan-days', {
-                    dietId: planId,
-                    dayNumber: 1,
-                    notes: `Plan meals for ${planInfo.name}`,
-                });
-                const dayId = dayRes.data?.data?.id;
+            await api.put(`/diet-plans/${planId}/schedule`, { days });
 
-                if (dayId) {
-                    for (const meal of meals) {
-                        await api.post('/diet-plan-meals', {
-                            dayId,
-                            mealTypeId: meal.mealTypeId,
-                            name: meal.name,
-                            calories: meal.calories ? parseInt(meal.calories) : undefined,
-                            portionSize: meal.portionSize || undefined,
-                            recipe: meal.recipe
-                                ? buildRecipeWithIngredients(meal)
-                                : undefined,
-                        });
-                    }
-                }
-            }
-
+            showToast(editingPlan ? 'Diet plan updated successfully.' : 'Diet plan created successfully.');
             resetAll();
             setView('list');
             fetchDietPlans();
         } catch (err: any) {
-            const msg = err.response?.data?.message || 'Failed to save diet plan.';
+            if (createdPlanId) {
+                await api.delete(`/diet-plans/${createdPlanId}`).catch(() => undefined);
+            }
+            const data = err.response?.data;
+            const msg = data?.message || data?.error?.message || err?.message || 'Failed to save diet plan.';
             setSaveError(msg);
             showToast(msg, 'error');
         } finally {
@@ -480,8 +618,9 @@ const DietComponent: React.FC = () => {
             .map(i => `- ${i.name}: ${i.quantity} ${i.unit}`)
             .join('\n');
 
+        if (!ingLines) return meal.recipe;
         const parts: string[] = [];
-        if (ingLines) parts.push(`Ingredients:\n${ingLines}`);
+        parts.push(`Ingredients:\n${ingLines}`);
         if (meal.recipe) parts.push(`Instructions:\n${meal.recipe}`);
         return parts.join('\n\n');
     };
@@ -754,12 +893,173 @@ const DietComponent: React.FC = () => {
                 ))}
             </div>
 
+            {/* Day picker: meals below belong to the selected day */}
+            <SectionCard>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-2">
+                        <Calendar className="w-5 h-5 text-teal-500" />
+                        <h3 className="font-bold text-gray-800">Plan Days</h3>
+                        <span className="text-xs text-gray-400">Pick a day, then add that day&apos;s meals</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Select value={copyFromDay} onValueChange={setCopyFromDay}>
+                            <SelectTrigger className="w-44 h-9 text-xs">
+                                <SelectValue placeholder="Copy meals from day..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {filledDays.filter(d => d !== activeDay).map(d => (
+                                    <SelectItem key={d} value={String(d)}>Day {d} ({mealsByDay[d].length} meals)</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <Button size="sm" variant="outline" onClick={copyMealsFromDay} disabled={!copyFromDay}>
+                            <Copy className="w-4 h-4 mr-1" /> Copy to Day {activeDay}
+                        </Button>
+                    </div>
+                </div>
+                {scheduleState === 'loading' ? (
+                    <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
+                        <Loader2 className="w-4 h-4 animate-spin" /> Loading this plan&apos;s meals...
+                    </div>
+                ) : (
+                    <>
+                        {/* Progress across the whole plan */}
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-teal-500 rounded-full transition-all"
+                                    style={{ width: `${Math.round((filledInPlan / planDayCount()) * 100)}%` }}
+                                />
+                            </div>
+                            <span className="text-xs font-semibold text-gray-600 whitespace-nowrap">
+                                {filledInPlan} / {planDayCount()} days filled
+                            </span>
+                        </div>
+
+                        {/* Weeks */}
+                        {weekCount > 1 && (
+                            <div className="flex gap-2 overflow-x-auto pb-2 mb-3">
+                                {Array.from({ length: weekCount }, (_, i) => i + 1).map(week => {
+                                    const days = daysOfWeek(week);
+                                    const filled = filledInWeek(week);
+                                    const complete = filled === days.length;
+                                    const active = week === activeWeek;
+                                    return (
+                                        <button
+                                            key={week}
+                                            type="button"
+                                            onClick={() => goToDay(days[0])}
+                                            className={`flex-shrink-0 px-3 py-2 rounded-xl border-2 text-left transition-all
+                                                ${active
+                                                    ? 'border-teal-500 bg-teal-50'
+                                                    : 'border-gray-200 hover:border-teal-300'}`}
+                                        >
+                                            <div className={`text-xs font-bold flex items-center gap-1 ${active ? 'text-teal-700' : 'text-gray-700'}`}>
+                                                Week {week}
+                                                {complete && <Check className="w-3.5 h-3.5 text-teal-500" />}
+                                            </div>
+                                            <div className="text-[10px] text-gray-400">
+                                                Days {days[0]}–{days[days.length - 1]} · {filled}/{days.length}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Days of the selected week */}
+                        <div className="grid grid-cols-7 gap-2">
+                            {daysOfWeek(activeWeek).map(d => {
+                                const count = mealsByDay[d]?.length || 0;
+                                const active = d === activeDay;
+                                return (
+                                    <button
+                                        key={d}
+                                        type="button"
+                                        onClick={() => goToDay(d)}
+                                        className={`rounded-xl border-2 py-2.5 px-1 text-center transition-all
+                                            ${active
+                                                ? 'border-teal-500 bg-teal-500 text-white shadow-sm'
+                                                : count
+                                                    ? 'border-teal-200 bg-teal-50 text-teal-800 hover:border-teal-400'
+                                                    : 'border-dashed border-gray-300 text-gray-500 hover:border-teal-300'}`}
+                                    >
+                                        <div className="text-sm font-bold">Day {d}</div>
+                                        <div className={`text-[10px] mt-0.5 ${active ? 'text-teal-50' : count ? 'text-teal-600' : 'text-gray-400'}`}>
+                                            {count ? `${count} meal${count === 1 ? '' : 's'}` : 'Empty'}
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Step through days while entering data */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 mt-4">
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => goToDay(activeDay - 1)}
+                                    disabled={activeDay <= 1}
+                                >
+                                    <ChevronLeft className="w-4 h-4 mr-1" /> Day {Math.max(activeDay - 1, 1)}
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => goToDay(activeDay + 1)}
+                                    disabled={activeDay >= planDayCount()}
+                                >
+                                    Day {Math.min(activeDay + 1, planDayCount())} <ChevronRight className="w-4 h-4 ml-1" />
+                                </Button>
+                            </div>
+                            {nextEmptyDay && nextEmptyDay !== activeDay && (
+                                <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-teal-600 hover:text-teal-700 hover:bg-teal-50"
+                                    onClick={() => goToDay(nextEmptyDay)}
+                                >
+                                    Next empty day (Day {nextEmptyDay}) <ChevronRight className="w-4 h-4 ml-1" />
+                                </Button>
+                            )}
+                        </div>
+
+                        {/* Days beyond a shortened duration that still hold meals */}
+                        {lateDays.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-3">
+                                {lateDays.map(d => (
+                                    <button
+                                        key={d}
+                                        type="button"
+                                        onClick={() => goToDay(d)}
+                                        className={`px-3 py-1.5 rounded-lg border-2 border-red-400 text-xs font-semibold text-red-600 ${d === activeDay ? 'bg-red-50' : 'hover:bg-red-50'}`}
+                                    >
+                                        Day {d} · {mealsByDay[d]?.length || 0}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </>
+                )}
+                {lateDaysMessage && (
+                    <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                        <p className="text-xs text-red-600">{lateDaysMessage}</p>
+                    </div>
+                )}
+                <p className="text-[10px] text-gray-400 mt-3">
+                    The number of days comes from the plan&apos;s duration. Days without meals show nothing in the app.
+                </p>
+            </SectionCard>
+
             {/* Add meal form */}
             <SectionCard>
                 <div className="flex items-center justify-between mb-5">
                     <div className="flex items-center gap-2">
                         <UtensilsCrossed className="w-5 h-5 text-teal-500" />
                         <h3 className="font-bold text-gray-800">Add New Meal</h3>
+                        <span className="px-2 py-0.5 bg-teal-100 text-teal-700 text-xs font-bold rounded-full">Day {activeDay}</span>
                     </div>
                     <Button size="sm" className="bg-teal-500 hover:bg-teal-600 text-white" onClick={addMealToList}>
                         <Plus className="w-4 h-4 mr-1" /> Add Meal
@@ -789,6 +1089,7 @@ const DietComponent: React.FC = () => {
                         </Label>
                         <Input
                             value={currentMeal.name}
+                            maxLength={100}
                             onChange={e => handleMealChange('name', e.target.value)}
                             placeholder="e.g. Egg with Brown Bread"
                         />
@@ -845,6 +1146,7 @@ const DietComponent: React.FC = () => {
                     <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Portion Size</Label>
                     <Input
                         value={currentMeal.portionSize}
+                        maxLength={150}
                         onChange={e => handleMealChange('portionSize', e.target.value)}
                         placeholder="e.g. 1 bowl (300g)"
                     />
@@ -936,7 +1238,7 @@ const DietComponent: React.FC = () => {
             <SectionCard>
                 <div className="flex items-center gap-3 mb-4">
                     <List className="w-5 h-5 text-teal-500" />
-                    <h3 className="font-bold text-gray-800">Meals Added</h3>
+                    <h3 className="font-bold text-gray-800">Day {activeDay} Meals</h3>
                     <span className="px-2.5 py-0.5 bg-teal-100 text-teal-700 text-xs font-bold rounded-full">
                         {meals.length} meals
                     </span>
@@ -944,7 +1246,7 @@ const DietComponent: React.FC = () => {
                 {meals.length === 0 ? (
                     <div className="text-center py-10 text-gray-400">
                         <Utensils className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                        <p className="text-sm">No meals added yet. Add your first meal above.</p>
+                        <p className="text-sm">No meals for Day {activeDay} yet. Add one above, or copy another day&apos;s meals.</p>
                     </div>
                 ) : (
                     <div className="space-y-3">
@@ -952,6 +1254,9 @@ const DietComponent: React.FC = () => {
                             <div key={meal.id} className="border border-gray-200 rounded-xl overflow-hidden">
                                 <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
                                     <div className="flex items-center gap-3">
+                                        {meal.imagePreview && (
+                                            <img src={meal.imagePreview} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+                                        )}
                                         {renderMealTypeBadge(meal.mealTypeName || 'Meal')}
                                         <span className="font-semibold text-sm text-gray-800">{meal.name}</span>
                                     </div>
@@ -1008,6 +1313,9 @@ const DietComponent: React.FC = () => {
     const renderPreviewTab = () => (
         <div className="space-y-5">
             <SectionCard>
+                {planInfo.imagePreview && (
+                    <img src={planInfo.imagePreview} alt="" className="w-full max-h-56 object-cover rounded-xl mb-4" />
+                )}
                 <h2 className="text-2xl font-bold text-gray-900 mb-3">
                     {planInfo.name || 'Unnamed Plan'}
                 </h2>
@@ -1052,19 +1360,26 @@ const DietComponent: React.FC = () => {
 
                 <h3 className="text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
                     <UtensilsCrossed className="w-4 h-4 text-teal-500" />
-                    Meals ({meals.length})
+                    Meals ({totalMeals}) · {filledDays.length} of {planDayCount()} days
                 </h3>
-                {meals.length === 0 ? (
+                {totalMeals === 0 ? (
                     <div className="text-center py-8 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
                         <Utensils className="w-8 h-8 mx-auto mb-2 opacity-30" />
                         <p className="text-sm">No meals added yet</p>
                     </div>
                 ) : (
-                    <div className="space-y-3">
-                        {meals.map(meal => (
+                    <div className="space-y-6">
+                        {filledDays.map(day => (
+                        <div key={day}>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-teal-600 mb-2">Day {day}</h4>
+                        <div className="space-y-3">
+                        {mealsByDay[day].map(meal => (
                             <div key={meal.id} className="border border-gray-200 rounded-xl overflow-hidden">
                                 <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
                                     <div className="flex items-center gap-3">
+                                        {meal.imagePreview && (
+                                            <img src={meal.imagePreview} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+                                        )}
                                         {renderMealTypeBadge(meal.mealTypeName || 'Meal')}
                                         <span className="font-bold text-sm text-gray-800">{meal.name}</span>
                                     </div>
@@ -1097,6 +1412,9 @@ const DietComponent: React.FC = () => {
                                 )}
                             </div>
                         ))}
+                        </div>
+                        </div>
+                        ))}
                     </div>
                 )}
             </SectionCard>
@@ -1124,9 +1442,9 @@ const DietComponent: React.FC = () => {
     // ─────────────────────────────────────────────────────────────────────────
     const renderListView = () => (
         <div className="space-y-8">
-            <div className="bg-white rounded-2xl shadow-lg p-8">
+            <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-8">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-8">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
                     <div className="flex items-center gap-4">
                         <div className="p-3 bg-gradient-to-r from-teal-100 to-cyan-100 rounded-xl">
                             <Salad className="w-6 h-6 text-teal-600" />

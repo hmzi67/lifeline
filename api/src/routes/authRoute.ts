@@ -2,9 +2,9 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import {
     appleAuth,
-    appleAuthCallback,
     appleMobileAuth,
     checkVerificationStatus,
+    exchangeOAuthLoginCode,
     getCurrentUser,
     googleAuth,
     googleAuthCallback,
@@ -33,6 +33,19 @@ const authLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+// One-time-code endpoints. Each code also locks after a few wrong guesses; this
+// caps how many codes one client can request or try across accounts.
+const otpLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: {
+        success: false,
+        message: 'Too many attempts, please try again later.',
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 // Authentication routes
 authRoute.post('/login', authLimiter, login);
 authRoute.post('/signup', authLimiter, signup);
@@ -41,12 +54,12 @@ authRoute.post('/refresh-token', refreshToken);
 authRoute.get('/me', getCurrentUser);
 
 // Password reset routes
-authRoute.post('/request-password-reset', requestPasswordReset);
-authRoute.post('/reset-password', resetPassword);
+authRoute.post('/request-password-reset', otpLimiter, requestPasswordReset);
+authRoute.post('/reset-password', otpLimiter, resetPassword);
 
 // Verification route
-authRoute.post('/resend-verification', resendVerificationEmail)
-authRoute.post('/verify', verify)
+authRoute.post('/resend-verification', otpLimiter, resendVerificationEmail)
+authRoute.post('/verify', otpLimiter, verify)
 authRoute.get('/check-verification', checkVerificationStatus)
 
 // OAuth routes
@@ -54,7 +67,8 @@ authRoute.get('/google', googleAuth);
 authRoute.get('/google/callback', googleAuthCallback);
 authRoute.post('/google/mobile', googleMobileAuth); // Mobile Google authentication
 authRoute.get('/apple', appleAuth);
-authRoute.post('/apple/callback', appleAuthCallback);
-authRoute.post('/apple/mobile', appleMobileAuth); // Mobile Apple authentication
+// POST /apple/callback is mounted in app.ts, before CORS.
+authRoute.post('/apple/mobile', authLimiter, appleMobileAuth); // Mobile Apple authentication
+authRoute.post('/oauth/exchange', otpLimiter, exchangeOAuthLoginCode); // Web: single-use code from /auth/callback
 
 export default authRoute;

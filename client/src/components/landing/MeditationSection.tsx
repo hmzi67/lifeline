@@ -19,7 +19,7 @@ export const MeditationSection: React.FC = () => {
         {
             image: meditationImage2,
             title: "Experience the future of meditation",
-            description: "Lorem ipsum dolor sit amet, labore consectetur adipiscing incididunt ut labore"
+            description: "Guided sessions, sleep stories and calming sounds to help you unwind and sleep better"
         },
         {
             image: meditationImage3,

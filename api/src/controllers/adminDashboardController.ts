@@ -100,6 +100,25 @@ export const getDashboardData = async (req: Request, res: Response) => {
       dailyGrowth.push({ date: key, count: growthMap.get(key) ?? 0 });
     }
 
+    // Completed revenue per calendar month for the last 6 months (UTC), oldest first.
+    const firstMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1));
+    const revenueRows = await prisma.$queryRaw<Array<{ month: Date; total: unknown }>>`
+      SELECT date_trunc('month', created_at) AS month, SUM(amount) AS total
+      FROM subscription_payments
+      WHERE status = 'COMPLETED' AND created_at >= ${firstMonth}
+      GROUP BY 1
+    `;
+    const revenueByMonth = new Map(
+      revenueRows.map((row) => [new Date(row.month).toISOString().slice(0, 7), Number(row.total ?? 0)])
+    );
+    const monthlyRevenue: Array<{ month: string; amount: number }> = [];
+    for (let i = 0; i < 6; i++) {
+      const month = new Date(Date.UTC(firstMonth.getUTCFullYear(), firstMonth.getUTCMonth() + i, 1))
+        .toISOString()
+        .slice(0, 7);
+      monthlyRevenue.push({ month, amount: revenueByMonth.get(month) ?? 0 });
+    }
+
     // Build status map
     const statusMap: Record<string, number> = {};
     usersByStatus.forEach((item) => {
@@ -137,7 +156,9 @@ export const getDashboardData = async (req: Request, res: Response) => {
         },
         subscriptions: {
           active: activeSubscriptions,
-          totalRevenue: totalRevenue._sum.amount || 0,
+          // A Prisma Decimal serialises as a string; the panel expects a number.
+          totalRevenue: Number(totalRevenue._sum.amount ?? 0),
+          monthlyRevenue,
           recentPayments: recentPayments.map((p) => ({
             id: p.id,
             username: p.user?.username ?? 'Unknown',

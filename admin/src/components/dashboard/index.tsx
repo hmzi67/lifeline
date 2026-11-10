@@ -149,8 +149,27 @@ export const SubscriptionRevenueCard: React.FC<{
             <p className="text-gray-500 mt-2">Total Revenue</p>
         </div>
 
-        <div className="relative h-32 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-2xl p-6 overflow-hidden">
-            <svg className="w-full h-full" viewBox="0 0 350 100" aria-label="Revenue trend chart">
+        <RevenueTrend months={subscriptions.monthlyRevenue ?? []} />
+    </GlowingCard>
+);
+
+const MONTH_LABEL = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' });
+
+// Revenue per month from the API; nothing is drawn when there is no revenue.
+const RevenueTrend: React.FC<{ months: Array<{ month: string; amount: number }> }> = ({ months }) => {
+    const max = Math.max(0, ...months.map((m) => m.amount));
+    if (months.length === 0 || max === 0) {
+        return (
+            <div className="h-32 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-2xl flex items-center justify-center text-sm text-gray-500">
+                No revenue recorded in the last 6 months
+            </div>
+        );
+    }
+    const step = months.length > 1 ? 300 / (months.length - 1) : 0;
+    const points = months.map((m, i) => ({ x: 25 + i * step, y: 75 - (m.amount / max) * 60, ...m }));
+    return (
+        <div className="h-36 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-2xl px-4 pt-4 pb-2">
+            <svg className="w-full h-full" viewBox="0 0 350 100" aria-label="Revenue per month, last 6 months">
                 <defs>
                     <linearGradient id="revenueGradient" x1="0%" y1="0%" x2="100%" y2="0%">
                         <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.8" />
@@ -162,25 +181,22 @@ export const SubscriptionRevenueCard: React.FC<{
                     stroke="url(#revenueGradient)"
                     strokeWidth="3"
                     strokeLinecap="round"
-                    points="20,70 70,50 120,60 170,40 220,45 270,30 320,35"
+                    points={points.map((p) => `${p.x},${p.y}`).join(' ')}
                 />
-                {[20, 70, 120, 170, 220, 270, 320].map((x, index) => {
-                    const y = [70, 50, 60, 40, 45, 30, 35][index];
-                    return (
-                        <circle
-                            key={index}
-                            cx={x}
-                            cy={y}
-                            r="4"
-                            fill="#f59e0b"
-                            className="drop-shadow-sm"
-                        />
-                    );
-                })}
+                {points.map((p) => (
+                    <g key={p.month}>
+                        <circle cx={p.x} cy={p.y} r="4" fill="#f59e0b">
+                            <title>{`${p.month}: $${p.amount.toLocaleString()}`}</title>
+                        </circle>
+                        <text x={p.x} y={96} textAnchor="middle" fontSize="10" fill="#6b7280">
+                            {MONTH_LABEL.format(new Date(`${p.month}-01T00:00:00Z`))}
+                        </text>
+                    </g>
+                ))}
             </svg>
         </div>
-    </GlowingCard>
-);
+    );
+};
 
 // Engagement Stats Component
 export const EngagementStatsCard: React.FC<{

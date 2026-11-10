@@ -65,7 +65,9 @@ export const getUserDietPlansByUserId = async (req: Request<{ userId: string }>,
             id: true,
             name: true,
             calories: true,
-            duration: true
+            duration: true,
+            description: true,
+            image: true
           }
         }
       }

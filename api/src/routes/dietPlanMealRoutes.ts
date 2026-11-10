@@ -6,6 +6,8 @@ import {
   updateDietPlanMeal,
   deleteDietPlanMeal
 } from '../controllers/dietPlanMealController.js';
+import authenticate from '../middleware/authenticate.js';
+import authorize from '../middleware/authorize.js';
 
 const router = Router();
 
@@ -16,12 +18,12 @@ router.get('/day/:dayId', getDietPlanMeals);
 router.get('/:id', getDietPlanMealById);
 
 // POST /api/diet-plan-meals - Create diet plan meal
-router.post('/', createDietPlanMeal);
+router.post('/', authenticate, authorize(['admin']), createDietPlanMeal);
 
 // PUT /api/diet-plan-meals/:id - Update diet plan meal
-router.put('/:id', updateDietPlanMeal);
+router.put('/:id', authenticate, authorize(['admin']), updateDietPlanMeal);
 
 // DELETE /api/diet-plan-meals/:id - Delete diet plan meal
-router.delete('/:id', deleteDietPlanMeal);
+router.delete('/:id', authenticate, authorize(['admin']), deleteDietPlanMeal);
 
 export default router;

@@ -20,31 +20,33 @@ import {
   deleteBlogComment,
   getCommentReplies
 } from '../controllers/blogsController.js';
+import authenticate from '../middleware/authenticate.js';
+import authorize from '../middleware/authorize.js';
 
 const router = Router();
 
 // Blog Category Routes
-router.post('/categories', createBlogCategory);
+router.post('/categories', authenticate, authorize(['admin']), createBlogCategory);
 router.get('/categories', getAllBlogCategories);
 router.get('/categories/:id', getBlogCategoryById);
-router.put('/categories/:id', updateBlogCategory);
-router.delete('/categories/:id', deleteBlogCategory);
+router.put('/categories/:id', authenticate, authorize(['admin']), updateBlogCategory);
+router.delete('/categories/:id', authenticate, authorize(['admin']), deleteBlogCategory);
 
 // Blog Routes
-router.post('/', createBlog);
+router.post('/', authenticate, authorize(['admin']), createBlog);
 router.get('/', getAllBlogs);
 router.get('/:id', getBlogById);
 router.get('/slug/:slug', getBlogBySlug);
-router.put('/:id', updateBlog);
-router.delete('/:id', deleteBlog);
+router.put('/:id', authenticate, authorize(['admin']), updateBlog);
+router.delete('/:id', authenticate, authorize(['admin']), deleteBlog);
 router.get('/category/:categoryId', getBlogsByCategory);
 router.get('/author/:authorId', getBlogsByAuthor);
 
 // Blog Comment Routes
-router.post('/:blogId/comments', createBlogComment);
+router.post('/:blogId/comments', authenticate, createBlogComment);
 router.get('/:blogId/comments', getBlogComments);
-router.put('/comments/:id', updateBlogComment);
-router.delete('/comments/:id', deleteBlogComment);
+router.put('/comments/:id', authenticate, updateBlogComment);
+router.delete('/comments/:id', authenticate, deleteBlogComment);
 router.get('/comments/:id/replies', getCommentReplies);
 
 export default router;

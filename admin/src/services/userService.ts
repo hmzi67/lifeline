@@ -1,4 +1,4 @@
-import { api } from "./api";
+import api from "@/lib/axios";
 import type { UserProfile } from "@/types/user.types";
 
 export interface CreateUserData {

@@ -8,6 +8,8 @@ import {
   searchExercises,
   getExercisesByPurpose
 } from '../controllers/exerciseController.js';
+import authenticate from '../middleware/authenticate.js';
+import authorize from '../middleware/authorize.js';
 
 const router = Router();
 
@@ -24,12 +26,12 @@ router.get('/purpose/:purpose', getExercisesByPurpose);
 router.get('/:id', getExerciseById);
 
 // POST /api/exercises - Create new exercise
-router.post('/', createExercise);
+router.post('/', authenticate, authorize(['admin']), createExercise);
 
 // PUT /api/exercises/:id - Update exercise
-router.put('/:id', updateExercise);
+router.put('/:id', authenticate, authorize(['admin']), updateExercise);
 
 // DELETE /api/exercises/:id - Delete exercise
-router.delete('/:id', deleteExercise);
+router.delete('/:id', authenticate, authorize(['admin']), deleteExercise);
 
 export default router;

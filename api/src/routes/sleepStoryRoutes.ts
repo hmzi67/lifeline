@@ -6,13 +6,16 @@ import {
   updateSleepStory,
   deleteSleepStory,
 } from '../controllers/sleepStoryController.js';
+import authenticate from '../middleware/authenticate.js';
+import authorize from '../middleware/authorize.js';
+import requireActiveLicense from '../middleware/requireActiveLicense.js';
 
 const router = Router();
 
-router.get('/', getSleepStories);
-router.get('/:id', getSleepStoryById);
-router.post('/', createSleepStory);
-router.put('/:id', updateSleepStory);
-router.delete('/:id', deleteSleepStory);
+router.get('/', authenticate, requireActiveLicense, getSleepStories);
+router.get('/:id', authenticate, requireActiveLicense, getSleepStoryById);
+router.post('/', authenticate, authorize(['admin']), createSleepStory);
+router.put('/:id', authenticate, authorize(['admin']), updateSleepStory);
+router.delete('/:id', authenticate, authorize(['admin']), deleteSleepStory);
 
 export default router;

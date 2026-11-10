@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, X, Music, Image as ImageIcon, FileText, Tag, Volume2 } from 'lucide-react';
+import { Save, X, Music, Image as ImageIcon, FileText, Tag, Volume2, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/axios';
 import { MediaUploadField } from '@/components/shared/MediaUploadField';
@@ -10,6 +10,8 @@ interface MeditationFormData {
     description: string;
     image: string;
     soundUrl: string;
+    /** Minutes; shown in the app and used for its sessions. */
+    durationMinutes: string;
 }
 
 interface MeditationEditorProps {
@@ -47,7 +49,8 @@ const MeditationEditor: React.FC<MeditationEditorProps> = ({ meditationId, onSav
         type: '',
         description: '',
         image: '',
-        soundUrl: ''
+        soundUrl: '',
+        durationMinutes: ''
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -71,7 +74,8 @@ const MeditationEditor: React.FC<MeditationEditorProps> = ({ meditationId, onSav
                     type: meditation.type || '',
                     description: meditation.description || '',
                     image: meditation.image || '',
-                    soundUrl: meditation.soundUrl || ''
+                    soundUrl: meditation.soundUrl || '',
+                    durationMinutes: meditation.duration != null ? String(meditation.duration) : ''
                 });
             }
         } catch (err: any) {
@@ -99,6 +103,11 @@ const MeditationEditor: React.FC<MeditationEditorProps> = ({ meditationId, onSav
             setError('Sound URL is required');
             return;
         }
+        const minutes = formData.durationMinutes.trim() ? Number(formData.durationMinutes) : null;
+        if (minutes !== null && (!Number.isInteger(minutes) || minutes < 1 || minutes > 600)) {
+            setError('Duration must be a whole number of minutes between 1 and 600');
+            return;
+        }
 
         try {
             setLoading(true);
@@ -107,7 +116,8 @@ const MeditationEditor: React.FC<MeditationEditorProps> = ({ meditationId, onSav
                 type: formData.type,
                 description: formData.description.trim(),
                 image: formData.image.trim(),
-                soundUrl: formData.soundUrl.trim()
+                soundUrl: formData.soundUrl.trim(),
+                durationMinutes: minutes
             };
 
             if (isEditing && meditationId) {
@@ -197,6 +207,27 @@ const MeditationEditor: React.FC<MeditationEditorProps> = ({ meditationId, onSav
                             <option key={type} value={type}>{type}</option>
                         ))}
                     </select>
+                </div>
+
+                {/* Duration Field */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <div className="flex items-center gap-2">
+                            <Clock className="w-4 h-4" />
+                            Duration (minutes)
+                        </div>
+                    </label>
+                    <input
+                        type="number"
+                        min={1}
+                        max={600}
+                        step={1}
+                        value={formData.durationMinutes}
+                        onChange={(e) => handleChange('durationMinutes', e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                        placeholder="e.g., 10"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">Shown on the meditation in the app.</p>
                 </div>
 
                 {/* Description Field */}

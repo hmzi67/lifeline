@@ -136,7 +136,7 @@ export const BlogReading = () => {
             </article>
 
             {/* Comment Section */}
-            <CommentSection />
+            <CommentSection blogId={blogData.id} />
           </div>
 
           {/* Sidebar */}

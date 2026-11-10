@@ -18,7 +18,8 @@ if (!config.stripePublishableKey) {
   );
 }
 
-const stripePromise = loadStripe(config.stripePublishableKey);
+// Stripe() throws on an empty key; without one, Elements renders nothing instead of crashing.
+const stripePromise = config.stripePublishableKey ? loadStripe(config.stripePublishableKey) : null;
 
 // Urgency countdown shown once a coupon is applied (15 minutes).
 const COUPON_COUNTDOWN_SECONDS = 15 * 60;
@@ -55,6 +56,7 @@ export default function Plan() {
   const [checkoutCouponCode, setCheckoutCouponCode] = useState<string | undefined>(undefined);
   const [couponSecondsLeft, setCouponSecondsLeft] = useState<number | null>(null);
   const couponTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [appStoreBilled, setAppStoreBilled] = useState(false);
 
   useEffect(() => {
     const fetchPlans = async () => {
@@ -74,6 +76,18 @@ export default function Plan() {
       }
     };
     fetchPlans();
+  }, []);
+
+  // VIP bought in the iOS app is billed by Apple; a card checkout here would
+  // be refused by the API, so tell the user up front.
+  useEffect(() => {
+    if (!localStorage.getItem('token')) return;
+    api.get('/subscription/status')
+      .then((res) => {
+        const status = res.data?.data;
+        setAppStoreBilled(status?.active === true && status?.source === 'app_store');
+      })
+      .catch(() => setAppStoreBilled(false));
   }, []);
 
   useEffect(() => {
@@ -110,7 +124,7 @@ export default function Plan() {
       {/* Header */}
       <div className="container mx-auto py-4 px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between">
-          <img src="/logo.svg" className="w-16 h-16 sm:w-20 sm:h-20" />
+          <img src="/logo.webp" alt="Lifeline" width={110} height={70} className="w-16 h-16 sm:w-20 sm:h-20 object-contain" />
           {couponSecondsLeft !== null && (
             <p className="hidden md:flex items-center justify-center gap-2 font-semibold text-primary-600">
               <Tag />
@@ -134,6 +148,15 @@ export default function Plan() {
               </p>
             </div>
 
+            {appStoreBilled ? (
+              <div className="max-w-xl w-full text-center rounded-2xl border border-gray-200 bg-gray-50 p-8">
+                <h2 className="font-bold text-xl text-gray-900 mb-2">You already have Lifeline VIP</h2>
+                <p className="text-gray-600">
+                  Your subscription is billed through the App Store. To change or cancel it, open
+                  Settings on your iPhone, tap your name, then Subscriptions.
+                </p>
+              </div>
+            ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl w-full">
               {loading ? (
                 <div className="col-span-3 text-center py-12 text-gray-500">Loading plans...</div>
@@ -162,9 +185,10 @@ export default function Plan() {
                 ))
               )}
             </div>
+            )}
 
             <p className="text-gray-700 font-semibold max-w-4xl text-center mt-12 text-sm sm:text-base">
-              Unlock our library of meditations, sleep sounds, and more. We'll send you reminder that your trails is ending soon. You'll be charged on March 28, cancel anytime before.
+              Unlock our library of meditations, sleep sounds, and more. We'll remind you before your trial ends, and you can cancel anytime before you're charged.
             </p>
           </>
         ) : !showStripeForm ? (
@@ -258,6 +282,7 @@ export default function Plan() {
             </div>
             <Elements stripe={stripePromise}>
               <StripePaymentForm
+                pricingPlanId={selectedPlan?.id ?? ''}
                 amount={checkoutAmount ?? (selectedPlan ? parseFloat(String(selectedPlan.price)) : 0)}
                 planTitle={selectedPlan?.name ?? ''}
                 couponCode={checkoutCouponCode}

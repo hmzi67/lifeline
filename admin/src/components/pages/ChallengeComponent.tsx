@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     Target, CheckCircle, XCircle, Clock, AlertCircle,
-    User, ChevronDown, ChevronUp, Loader2,
+    User, ChevronDown, ChevronUp, Loader2, Flag,
 } from 'lucide-react';
 import { CrudTable, type Column } from '@/components/shared/CrudTable';
 import { FormModal, type FormField } from '@/components/shared/FormModal';
@@ -22,6 +22,10 @@ interface Challenge {
     videoUrl: string | null;
     startDate: string | null;
     endDate: string | null;
+    durationDays?: number | null;
+    dailyFee?: string | number | null;
+    challengeExercises?: { exerciseId: string }[];
+    challengeDiets?: { dietId: string }[];
     submittedBy?: {
         id: string;
         username: string | null;
@@ -63,7 +67,7 @@ const RejectModal: React.FC<{
                     <h3 className="text-xl font-bold text-gray-900">Reject Challenge</h3>
                 </div>
                 <p className="text-sm text-gray-600 mb-4">
-                    Rejecting <span className="font-semibold">"{challenge.name}"</span>. Optionally provide a reason.
+                    Rejecting <span className="font-semibold">&ldquo;{challenge.name}&rdquo;</span>. Optionally provide a reason.
                 </p>
                 <textarea
                     value={reason}
@@ -288,19 +292,182 @@ const ApprovalRequestsTab: React.FC = () => {
     );
 };
 
+// ── Reports Tab ───────────────────────────────────────────────────────────────
+interface ReportedChallenge {
+    challenge: {
+        id: string;
+        name: string | null;
+        purpose: string | null;
+        description: string | null;
+        approvalStatus: string;
+        submittedBy: { id: string; username: string | null; email: string } | null;
+    };
+    reports: {
+        id: string;
+        reason: string;
+        details: string | null;
+        createdAt: string;
+        reporter: { id: string; username: string | null; email: string };
+    }[];
+}
+
+const REPORT_REASON_LABELS: Record<string, string> = {
+    INAPPROPRIATE: 'Inappropriate or offensive',
+    SPAM: 'Spam or misleading',
+    UNSAFE: 'Unsafe activity',
+    OTHER: 'Something else',
+};
+
+const ReportsTab: React.FC<{ onChange: () => void }> = ({ onChange }) => {
+    const [items, setItems] = useState<ReportedChallenge[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+    const fetchReports = useCallback(async () => {
+        setLoading(true);
+        setError('');
+        try {
+            const res = await api.get('/challenges/reports');
+            const data = res.data?.data;
+            setItems(Array.isArray(data?.challenges) ? data.challenges : []);
+        } catch (err: any) {
+            setError(handleApiError(err));
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => { fetchReports(); }, [fetchReports]);
+
+    const resolve = async (item: ReportedChallenge, action: 'remove' | 'dismiss') => {
+        if (action === 'remove' && !window.confirm(`Remove "${item.challenge.name}"? Users will no longer see it.`)) return;
+        setActionLoading(item.challenge.id);
+        try {
+            await api.patch(`/challenges/${item.challenge.id}/reports`, { action });
+            fetchReports();
+            onChange();
+        } catch (err: any) {
+            alert(handleApiError(err));
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center min-h-[300px]">
+                <div className="text-center space-y-3">
+                    <Loader2 className="w-10 h-10 animate-spin text-yellow-500 mx-auto" />
+                    <p className="text-gray-500">Loading reports…</p>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <>
+            {error && (
+                <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                    <p className="text-sm font-medium text-red-600">{error}</p>
+                </div>
+            )}
+
+            {items.length === 0 ? (
+                <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-12 text-center">
+                    <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
+                    <p className="text-gray-700 text-lg font-semibold">No open reports</p>
+                    <p className="text-gray-500 text-sm mt-1">Challenges users flag in the app will appear here.</p>
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    {items.map(item => {
+                        const isActioning = actionLoading === item.challenge.id;
+                        return (
+                            <div key={item.challenge.id} className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="flex items-start gap-4 flex-1 min-w-0">
+                                        <div className="p-2.5 bg-gradient-to-br from-red-100 to-orange-100 rounded-xl flex-shrink-0">
+                                            <Flag className="w-5 h-5 text-red-600" />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <p className="font-semibold text-gray-900">{item.challenge.name || '—'}</p>
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                    {item.reports.length} {item.reports.length === 1 ? 'report' : 'reports'}
+                                                </span>
+                                            </div>
+                                            {item.challenge.purpose && (
+                                                <p className="text-sm text-gray-500 mt-0.5">{item.challenge.purpose}</p>
+                                            )}
+                                            {item.challenge.description && (
+                                                <p className="text-sm text-gray-700 mt-2 leading-relaxed">{item.challenge.description}</p>
+                                            )}
+                                            {item.challenge.submittedBy && (
+                                                <p className="text-xs text-gray-500 mt-2">
+                                                    Host: <span className="font-medium text-gray-700">{item.challenge.submittedBy.email}</span>
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                        <Button
+                                            size="sm"
+                                            onClick={() => resolve(item, 'remove')}
+                                            disabled={isActioning}
+                                            className="bg-red-600 hover:bg-red-700 text-white gap-1.5"
+                                        >
+                                            {isActioning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
+                                            Remove challenge
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => resolve(item, 'dismiss')}
+                                            disabled={isActioning}
+                                            className="gap-1.5"
+                                        >
+                                            <CheckCircle className="w-3.5 h-3.5" />
+                                            Dismiss
+                                        </Button>
+                                    </div>
+                                </div>
+                                <div className="mt-4 border-t border-gray-100 pt-3 space-y-2">
+                                    {item.reports.map(report => (
+                                        <div key={report.id} className="text-sm text-gray-700 flex flex-wrap gap-x-2">
+                                            <span className="font-medium">{REPORT_REASON_LABELS[report.reason] ?? report.reason}</span>
+                                            {report.details && <span className="text-gray-600">&ldquo;{report.details}&rdquo;</span>}
+                                            <span className="text-gray-400">
+                                                by {report.reporter.username ?? report.reporter.email}, {new Date(report.createdAt).toLocaleString()}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </>
+    );
+};
+
 // ── Main Component ────────────────────────────────────────────────────────────
 const ChallengeComponent: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'challenges' | 'approvals'>('challenges');
+    const [activeTab, setActiveTab] = useState<'challenges' | 'approvals' | 'reports'>('challenges');
     const [challenges, setChallenges] = useState<Challenge[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingChallenge, setEditingChallenge] = useState<Challenge | null>(null);
     const [pendingCount, setPendingCount] = useState(0);
+    const [reportCount, setReportCount] = useState(0);
 
     useEffect(() => {
         fetchChallenges();
         fetchPendingCount();
+        fetchReportCount();
     }, []);
 
     const fetchChallenges = async () => {
@@ -333,6 +500,26 @@ const ChallengeComponent: React.FC = () => {
         } catch { /* silent */ }
     };
 
+    const fetchReportCount = async () => {
+        try {
+            const res = await api.get('/challenges/reports');
+            const data = res.data?.data;
+            if (data) setReportCount(data.total ?? data.challenges?.length ?? 0);
+        } catch { /* silent */ }
+    };
+
+    // Exercises (shown on the app's Join Challenge screen) and diet plans that can be attached.
+    const [exerciseOptions, setExerciseOptions] = useState<{ value: string; label: string }[]>([]);
+    const [dietOptions, setDietOptions] = useState<{ value: string; label: string }[]>([]);
+    useEffect(() => {
+        api.get('/exercises')
+            .then(res => setExerciseOptions((res.data?.data || []).map((e: any) => ({ value: e.id, label: e.name || 'Exercise' }))))
+            .catch(() => setExerciseOptions([]));
+        api.get('/diet-plans')
+            .then(res => setDietOptions((res.data?.data || []).map((d: any) => ({ value: d.id, label: d.name || 'Diet plan' }))))
+            .catch(() => setDietOptions([]));
+    }, []);
+
     const handleAdd = () => { setEditingChallenge(null); setIsModalOpen(true); };
     const handleEdit = (challenge: Challenge) => { setEditingChallenge(challenge); setIsModalOpen(true); };
 
@@ -347,12 +534,17 @@ const ChallengeComponent: React.FC = () => {
     };
 
     const handleSubmit = async (data: Record<string, any>) => {
+        // The challenge itself, then which exercises and diet plans belong to it.
+        const { exerciseIds = [], dietIds = [], challengeExercises: _e, challengeDiets: _d, ...challenge } = data;
         try {
+            let id = editingChallenge?.id;
             if (editingChallenge) {
-                await challengeService.update(editingChallenge.id, data);
+                await challengeService.update(editingChallenge.id, challenge);
             } else {
-                await challengeService.create(data);
+                const created = await challengeService.create(challenge);
+                id = created.data?.id;
             }
+            if (id) await api.put(`/challenges/${id}/content`, { exerciseIds, dietIds });
             fetchChallenges();
         } catch (err: any) {
             throw new Error(handleApiError(err));
@@ -434,7 +626,8 @@ const ChallengeComponent: React.FC = () => {
     const formFields: FormField[] = [
         { name: 'name', label: 'Challenge Name', type: 'text', required: true, placeholder: 'e.g., 30-Day Fitness Challenge' },
         { name: 'purpose', label: 'Purpose', type: 'textarea', placeholder: 'What is the goal of this challenge?', rows: 2 },
-        { name: 'description', label: 'Description', type: 'textarea', placeholder: 'Detailed description of the challenge', rows: 4 },
+        // Required by the API's challenge schema.
+        { name: 'description', label: 'Description', type: 'textarea', required: true, placeholder: 'Detailed description of the challenge', rows: 4 },
         {
             name: 'status', label: 'Status', type: 'select',
             options: [
@@ -446,9 +639,30 @@ const ChallengeComponent: React.FC = () => {
         },
         { name: 'startDate', label: 'Start Date', type: 'date' },
         { name: 'endDate', label: 'End Date', type: 'date' },
+        // Joiners pay daily fee x duration. Leave the fee empty for a free challenge.
+        // iOS can only sell $1/day for 7, 14 or 30 days (fixed App Store products).
+        { name: 'durationDays', label: 'Duration (days)', type: 'number', min: 1, max: 365, placeholder: 'e.g., 7' },
+        { name: 'dailyFee', label: 'Daily Fee (USD)', type: 'number', min: 0, placeholder: 'Empty = free to join' },
         { name: 'image', label: 'Cover Image', type: 'file', accept: 'image/*' },
         { name: 'videoUrl', label: 'Challenge Video', type: 'file', accept: 'video/*' },
+        {
+            name: 'exerciseIds', label: 'Exercises', type: 'multiselect', options: exerciseOptions,
+            placeholder: 'Search exercises...', hint: 'Shown to users on the Join Challenge screen.',
+        },
+        {
+            name: 'dietIds', label: 'Diet Plans', type: 'multiselect', options: dietOptions,
+            placeholder: 'Search diet plans...',
+        },
     ];
+
+    // Pre-select the challenge's current exercises and diet plans when editing.
+    const modalInitialData = React.useMemo(() => (editingChallenge
+        ? {
+            ...editingChallenge,
+            exerciseIds: (editingChallenge.challengeExercises || []).map(e => e.exerciseId),
+            dietIds: (editingChallenge.challengeDiets || []).map(d => d.dietId),
+        }
+        : {}), [editingChallenge]);
 
     const stats = [
         {
@@ -466,7 +680,7 @@ const ChallengeComponent: React.FC = () => {
     return (
         <div className="space-y-6">
             {/* Tab bar */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-1.5 flex gap-1 w-fit">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-1.5 flex flex-wrap gap-1 w-fit max-w-full">
                 <button
                     onClick={() => setActiveTab('challenges')}
                     className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 flex items-center gap-2
@@ -492,6 +706,23 @@ const ChallengeComponent: React.FC = () => {
                         <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold
                             ${activeTab === 'approvals' ? 'bg-white text-orange-500' : 'bg-orange-500 text-white'}`}>
                             {pendingCount}
+                        </span>
+                    )}
+                </button>
+                <button
+                    onClick={() => { setActiveTab('reports'); fetchReportCount(); }}
+                    className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 flex items-center gap-2 relative
+                        ${activeTab === 'reports'
+                            ? 'bg-gradient-to-r from-yellow-400 to-orange-400 text-white shadow-md'
+                            : 'text-gray-600 hover:bg-gray-50'
+                        }`}
+                >
+                    <Flag className="w-4 h-4" />
+                    Reports
+                    {reportCount > 0 && (
+                        <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold
+                            ${activeTab === 'reports' ? 'bg-white text-red-500' : 'bg-red-500 text-white'}`}>
+                            {reportCount}
                         </span>
                     )}
                 </button>
@@ -521,10 +752,23 @@ const ChallengeComponent: React.FC = () => {
                         onSubmit={handleSubmit}
                         title={editingChallenge ? 'Edit Challenge' : 'Add New Challenge'}
                         fields={formFields}
-                        initialData={editingChallenge || {}}
+                        initialData={modalInitialData}
                         submitLabel={editingChallenge ? 'Update' : 'Create'}
                     />
                 </>
+            ) : activeTab === 'reports' ? (
+                <div className="bg-white rounded-2xl shadow-lg p-8">
+                    <div className="flex items-center gap-4 mb-8">
+                        <div className="p-3 bg-gradient-to-r from-red-100 to-orange-100 rounded-xl">
+                            <Flag className="w-6 h-6 text-red-600" />
+                        </div>
+                        <div>
+                            <h2 className="text-3xl font-bold text-gray-900">Reported Challenges</h2>
+                            <p className="text-gray-500">Challenges users flagged in the app. Remove them or dismiss the reports.</p>
+                        </div>
+                    </div>
+                    <ReportsTab onChange={() => { fetchReportCount(); fetchChallenges(); }} />
+                </div>
             ) : (
                 <div className="bg-white rounded-2xl shadow-lg p-8">
                     <div className="flex items-center gap-4 mb-8">

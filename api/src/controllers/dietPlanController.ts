@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { config } from '../config/index.js';
 
 const prisma = new PrismaClient();
 
@@ -12,6 +13,7 @@ interface DietPlanQuery {
 
 interface CreateDietPlanBody {
   name: string;
+  goal?: string | null;
   calories?: number;
   duration?: string;
   description?: string;
@@ -22,6 +24,7 @@ interface CreateDietPlanBody {
 
 interface UpdateDietPlanBody {
   name?: string;
+  goal?: string | null;
   calories?: number;
   duration?: string;
   description?: string;
@@ -46,6 +49,30 @@ const BMI_CATEGORY_KEYWORDS: Record<string, string[]> = {
   overweight: ['overweight', 'bmi overweight'],
   obese: ['obese', 'obesity', 'bmi obese'],
 };
+
+// Goals an admin can give a plan, with the words the app matches a user's goal against.
+// Sent to clients as `category`, which current app builds already search when filtering plans.
+export const DIET_PLAN_GOALS: Record<string, string> = {
+  weight_loss: 'weight loss',
+  weight_gain: 'weight gain',
+  build_muscle: 'build muscle',
+  modify_diet: 'modify diet',
+  manage_stress: 'manage stress',
+  intermittent_fasting: 'intermittent fasting',
+};
+
+/** undefined: not sent; null: cleared; string: a known goal. Throws on an unknown goal. */
+const parseGoal = (value: unknown): string | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  if (typeof value === 'string' && DIET_PLAN_GOALS[value]) return value;
+  throw new Error(`goal must be one of: ${Object.keys(DIET_PLAN_GOALS).join(', ')}`);
+};
+
+const withCategory = <T extends { goal?: string | null }>(plan: T): T & { category: string | null } => ({
+  ...plan,
+  category: plan.goal ? DIET_PLAN_GOALS[plan.goal] ?? null : null,
+});
 
 const normalizeText = (value: string | null | undefined): string => {
   return (value || '').trim().toLowerCase().replace(/[_-]+/g, ' ');
@@ -94,15 +121,21 @@ const parseUserIdFromToken = (authorizationHeader?: string): string | null => {
 
   try {
     const token = authorizationHeader.substring(7);
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as { userId?: string };
+    const decoded = jwt.verify(token, config.jwt.secret) as { userId?: string };
     return decoded.userId || null;
   } catch {
     return null;
   }
 };
 
-const toKg = (weight: number | null | undefined, unit: string | null | undefined): number | null => {
+// The app stores weight in kg and height in cm, with the unit field holding the user's
+// display choice ("154lbs", "5.8ft"). A unit that starts with a number is that display
+// form, so the stored value is already kg/cm. Bare units ("lbs") describe the value itself.
+const isDisplayForm = (unit: string | null | undefined) => /^\s*\d/.test(unit ?? '');
+
+export const toKg = (weight: number | null | undefined, unit: string | null | undefined): number | null => {
   if (!weight || weight <= 0) return null;
+  if (isDisplayForm(unit)) return weight;
 
   const normalizedUnit = normalizeText(unit);
   if (normalizedUnit === 'kg' || normalizedUnit === 'kgs' || normalizedUnit === '') return weight;
@@ -113,8 +146,9 @@ const toKg = (weight: number | null | undefined, unit: string | null | undefined
   return null;
 };
 
-const toMeters = (height: number | null | undefined, unit: string | null | undefined): number | null => {
+export const toMeters = (height: number | null | undefined, unit: string | null | undefined): number | null => {
   if (!height || height <= 0) return null;
+  if (isDisplayForm(unit)) return height / 100;
 
   const normalizedUnit = normalizeText(unit);
   if (normalizedUnit === 'cm' || normalizedUnit === '') return height / 100;
@@ -162,7 +196,7 @@ export const getAllDietPlans = async (req: Request, res: Response): Promise<void
       }
     });
 
-    let personalizedDietPlans = dietPlans;
+    let personalizedDietPlans = dietPlans.map(withCategory);
 
     const userId = parseUserIdFromToken(req.headers.authorization);
     if (userId) {
@@ -278,7 +312,7 @@ export const getDietPlanById = async (req: Request, res: Response): Promise<void
 
     res.status(200).json({
       success: true,
-      data: dietPlan,
+      data: withCategory(dietPlan),
       message: 'Diet plan retrieved successfully'
     });
   } catch (error) {
@@ -305,6 +339,14 @@ export const createDietPlan = async (req: Request<{}, {}, CreateDietPlanBody>, r
       return;
     }
 
+    let goal: string | null | undefined;
+    try {
+      goal = parseGoal(req.body.goal);
+    } catch (e) {
+      res.status(400).json({ success: false, message: (e as Error).message });
+      return;
+    }
+
     const dietPlan = await prisma.dietPlan.create({
       data: {
         name,
@@ -314,12 +356,13 @@ export const createDietPlan = async (req: Request<{}, {}, CreateDietPlanBody>, r
         image: image || null,
         cuisineName: cuisineName || null,
         gender: gender || null,
+        goal: goal ?? null,
       }
     });
 
     res.status(201).json({
       success: true,
-      data: dietPlan,
+      data: withCategory(dietPlan),
       message: 'Diet plan created successfully'
     });
   } catch (error) {
@@ -351,7 +394,16 @@ export const updateDietPlan = async (req: Request<{ id: string }, {}, UpdateDiet
       return;
     }
 
+    let goal: string | null | undefined;
+    try {
+      goal = parseGoal(req.body.goal);
+    } catch (e) {
+      res.status(400).json({ success: false, message: (e as Error).message });
+      return;
+    }
+
     const updateData: Partial<CreateDietPlanBody> = {};
+    if (goal !== undefined) updateData.goal = goal;
     if (name !== undefined) updateData.name = name;
     if (calories !== undefined) updateData.calories = calories;
     if (duration !== undefined) updateData.duration = duration;
@@ -367,7 +419,7 @@ export const updateDietPlan = async (req: Request<{ id: string }, {}, UpdateDiet
 
     res.status(200).json({
       success: true,
-      data: updatedDietPlan,
+      data: withCategory(updatedDietPlan),
       message: 'Diet plan updated successfully'
     });
   } catch (error) {
@@ -398,9 +450,34 @@ export const deleteDietPlan = async (req: Request<{ id: string }>, res: Response
       return;
     }
 
-    await prisma.dietPlan.delete({
-      where: { id }
-    });
+    // Days, meals and user links reference the plan without ON DELETE CASCADE, so a
+    // bare delete fails on the foreign keys. Refuse while users follow it, have saved it,
+    // or a challenge uses it (deleting would silently take it from them); otherwise
+    // remove the plan's own days and meals with it.
+    const [activeCount, savedCount, challengeCount] = await Promise.all([
+      prisma.userActiveDietPlan.count({ where: { dietId: id } }),
+      prisma.userDietPlan.count({ where: { dietId: id } }),
+      prisma.challengeDiet.count({ where: { dietId: id } }),
+    ]);
+    if (activeCount > 0 || savedCount > 0 || challengeCount > 0) {
+      const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+      const usedBy = [
+        activeCount > 0 ? `followed by ${plural(activeCount, 'user')}` : null,
+        savedCount > 0 ? `saved by ${plural(savedCount, 'user')}` : null,
+        challengeCount > 0 ? `used in ${plural(challengeCount, 'challenge')}` : null,
+      ].filter(Boolean).join(', ');
+      res.status(409).json({
+        success: false,
+        message: `This diet plan is ${usedBy}, so it can't be deleted.`
+      });
+      return;
+    }
+
+    await prisma.$transaction([
+      prisma.dietPlanMeal.deleteMany({ where: { day: { dietId: id } } }),
+      prisma.dietPlanDay.deleteMany({ where: { dietId: id } }),
+      prisma.dietPlan.delete({ where: { id } }),
+    ]);
 
     res.status(200).json({
       success: true,
@@ -457,7 +534,7 @@ export const searchDietPlans = async (req: Request<{}, {}, {}, DietPlanQuery>, r
 
     res.status(200).json({
       success: true,
-      data: dietPlans,
+      data: dietPlans.map(withCategory),
       message: 'Diet plans search completed successfully'
     });
   } catch (error) {

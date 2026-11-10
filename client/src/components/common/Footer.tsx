@@ -78,9 +78,12 @@ export default function Footer() {
             <div className="flex items-center order-2 md:order-1">
               <div className="relative">
                 <img
-                  src="/logo-dark.svg"
-                  alt="Lift Media"
-                  className="w-20 h-20 sm:w-24 sm:h-24 lg:w-32 lg:h-32"
+                  src="/logo-dark.webp"
+                  alt="Lifeline"
+                  width={157}
+                  height={101}
+                  loading="lazy"
+                  className="w-20 h-20 sm:w-24 sm:h-24 lg:w-32 lg:h-32 object-contain"
                 />
               </div>
             </div>

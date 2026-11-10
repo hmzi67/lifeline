@@ -53,7 +53,20 @@ export const fetchQuestionnaire = async (): Promise<QuestionnaireData | null> =>
   }
 };
 
+const hasActiveSubscription = async (): Promise<boolean> => {
+  try {
+    const res = await api.get('/subscription/status');
+    return res.data?.data?.active === true;
+  } catch {
+    return false;
+  }
+};
+
+// Paid means VIP is active now (including App Store purchases and free trials)
+// or the user has a completed payment on record.
 export const hasCompletedPayment = async (userId: string): Promise<boolean> => {
+  if (await hasActiveSubscription()) return true;
+
   try {
     const res = await api.get(`/subscription-payments/user/${userId}`, {
       params: { limit: 100 },

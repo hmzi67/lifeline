@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
+import { CouponError, findUsableCoupon } from '../services/couponService.js';
 
 const prisma = new PrismaClient();
 
@@ -209,34 +210,7 @@ export const validateCoupon = async (req: Request, res: Response) => {
     }
 
     const { code } = validateCouponSchema.parse(req.body);
-    const upperCode = code.toUpperCase();
-
-    const coupon = await prisma.couponCode.findUnique({ where: { code: upperCode } });
-
-    if (!coupon) {
-      return res.status(404).json({ success: false, message: 'Invalid coupon code' });
-    }
-
-    if (!coupon.isActive) {
-      return res.status(400).json({ success: false, message: 'This coupon is no longer active' });
-    }
-
-    if (coupon.expiresAt && new Date() > coupon.expiresAt) {
-      return res.status(400).json({ success: false, message: 'This coupon has expired' });
-    }
-
-    if (coupon.currentUses >= coupon.maxUses) {
-      return res.status(400).json({ success: false, message: 'This coupon has reached its usage limit' });
-    }
-
-    // Check if user has already used this coupon
-    const alreadyUsed = await prisma.couponUsage.findUnique({
-      where: { couponId_userId: { couponId: coupon.id, userId } },
-    });
-
-    if (alreadyUsed) {
-      return res.status(400).json({ success: false, message: 'You have already used this coupon code' });
-    }
+    const coupon = await findUsableCoupon(prisma, code, userId);
 
     return res.status(200).json({
       success: true,
@@ -251,6 +225,9 @@ export const validateCoupon = async (req: Request, res: Response) => {
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ success: false, message: 'Validation error', errors: error.errors });
+    }
+    if (error instanceof CouponError) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
     }
     console.error('validateCoupon error:', error);
     return res.status(500).json({ success: false, message: 'Failed to validate coupon', error: error.message });

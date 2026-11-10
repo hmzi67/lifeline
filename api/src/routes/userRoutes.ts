@@ -3,12 +3,14 @@ import {
     createUser,
     deleteOwnAccount,
     deleteUser,
+    exportOwnData,
     getAllUsers,
     getCurrentUser,
     getUserSettings,
     getUserStats,
     getUserWithRelations,
     registerPushToken,
+    updateOwnProfile,
     updateUser,
     updateUserSettings,
 } from '../controllers/userController.js';
@@ -33,10 +35,11 @@ const checkProfileOwnership = (req: Request, res: Response, next: NextFunction) 
 
 // Regular user routes
 userRoute.get('/profile', authenticate, getCurrentUser);
-userRoute.put('/profile/:id', authenticate, checkProfileOwnership, mediaUpload.single('file'), updateUser);
-userRoute.delete('/profile/:id', authenticate, checkProfileOwnership, deleteUser);
-// Self-service account deletion — requires email + password confirmation in the body
+userRoute.put('/profile/:id', authenticate, checkProfileOwnership, mediaUpload.single('file'), updateOwnProfile);
+userRoute.delete('/profile/:id', authenticate, checkProfileOwnership, deleteOwnAccount);
+// Self-service account deletion — requires password (or the typed phrase for Google/Apple accounts) in the body
 userRoute.delete('/account', authenticate, deleteOwnAccount);
+userRoute.get('/export', authenticate, exportOwnData);
 userRoute.get('/settings', authenticate, getUserSettings);
 userRoute.put('/settings', authenticate, updateUserSettings);
 userRoute.post('/push-token', authenticate, registerPushToken);

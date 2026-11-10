@@ -1,0 +1,4 @@
+# Secrets are given to the container at runtime (environment variables or a mounted file),
+# never built into the image.
+*firebase-adminsdk*.json
+firebase-service-account*.json

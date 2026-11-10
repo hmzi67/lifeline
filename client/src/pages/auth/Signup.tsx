@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { User } from "lucide-react";
 import image1 from "@/assets/images/landing/hero-1.webp";
+import AppleOAuthButton from "@/components/auth/AppleOAuthButton";
 import GoogleOAuthButton from "@/components/auth/GoogleOAuthButton";
 import AuthForm from "@/components/auth/AuthForm";
 import { useAuth } from "@/contexts/AuthContext";
@@ -24,7 +25,8 @@ const Signup: React.FC = () => {
 
     try {
       await signup(name, email, password);
-      navigate("/verify");
+      // Verify pre-fills the address from ?email= so it need not be typed again.
+      navigate(`/verify?email=${encodeURIComponent(email)}`);
     } catch (error: any) {
       setLoading(false);
       if (Array.isArray(error)) {
@@ -82,8 +84,9 @@ const Signup: React.FC = () => {
             </div>
 
             {/* Social Auth Buttons */}
-            <div className="grid ">
-              <GoogleOAuthButton className="bg-white/5 backdrop-blur-sm border border-white/20 rounded-xl text-white hover:bg-white/10 transition-all duration-200 group" />
+            <div className="grid grid-cols-2 gap-4">
+              <GoogleOAuthButton text="Google" className="bg-white/5 backdrop-blur-sm border border-white/20 rounded-xl text-white hover:bg-white/10 transition-all duration-200 group" />
+              <AppleOAuthButton text="Apple" className="bg-white/5 backdrop-blur-sm border border-white/20 rounded-xl text-white hover:bg-white/10 transition-all duration-200 group" />
             </div>
 
             {/* Sign In Link */}
