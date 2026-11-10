@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database.js';
+import { cursorArgs, cursorPage } from '../utils/pagination.js';
 
 interface AssignExerciseBody {
   userId: string;
@@ -14,7 +15,9 @@ interface UpdateUserExerciseBody {
 // Get all user exercises
 export const getAllUserExercises = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userExercises = await prisma.userExercise.findMany({
+    const userExercisesPage = await prisma.userExercise.findMany({
+      ...cursorArgs(req.query),
+      orderBy: { id: 'asc' },
       include: {
         user: {
           select: {
@@ -37,10 +40,12 @@ export const getAllUserExercises = async (req: Request, res: Response): Promise<
         }
       }
     });
+    const { items: userExercises, nextCursor } = cursorPage(userExercisesPage, req.query);
 
     res.status(200).json({
       success: true,
       data: userExercises,
+      nextCursor,
       message: 'User exercises retrieved successfully'
     });
   } catch (error) {

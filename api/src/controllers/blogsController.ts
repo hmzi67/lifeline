@@ -2,6 +2,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database.js';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
+import { pageSize } from '../utils/pagination.js';
 
 // Blog authors and commenters are shown publicly: never include the full user
 // row (password hash, email, phone, one-time codes, store tokens).
@@ -118,7 +119,8 @@ export const createBlog = async (req: Request, res: Response) => {
 
 export const getAllBlogs = async (req: Request, res: Response) => {
   try {
-    const { page = 1, limit = 10, status, categoryId, authorId } = req.query;
+    const { page = 1, limit: rawLimit, status, categoryId, authorId } = req.query;
+    const limit = pageSize(rawLimit, 10);
     const skip = (Number(page) - 1) * Number(limit);
     
     const where: any = {};
@@ -272,7 +274,8 @@ export const deleteBlog = async (req: Request, res: Response) => {
 export const getBlogsByCategory = async (req: Request, res: Response) => {
   try {
     const { categoryId } = req.params;
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit: rawLimit } = req.query;
+    const limit = pageSize(rawLimit, 10);
     const skip = (Number(page) - 1) * Number(limit);
     
     const [blogs, total] = await Promise.all([
@@ -308,7 +311,8 @@ export const getBlogsByCategory = async (req: Request, res: Response) => {
 export const getBlogsByAuthor = async (req: Request, res: Response) => {
   try {
     const { authorId } = req.params;
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit: rawLimit } = req.query;
+    const limit = pageSize(rawLimit, 10);
     const skip = (Number(page) - 1) * Number(limit);
     
     const [blogs, total] = await Promise.all([
@@ -379,7 +383,8 @@ export const createBlogComment = async (req: Request, res: Response) => {
 export const getBlogComments = async (req: Request, res: Response) => {
   try {
     const { blogId } = req.params;
-    const { page = 1, limit = 20 } = req.query;
+    const { page = 1, limit: rawLimit } = req.query;
+    const limit = pageSize(rawLimit, 20);
     const skip = (Number(page) - 1) * Number(limit);
     
     const [comments, total] = await Promise.all([

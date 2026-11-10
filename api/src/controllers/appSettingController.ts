@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database.js';
+import { pageSize } from '../utils/pagination.js';
 
 export class AppSettingController {
   // Create a new app setting
@@ -57,7 +58,8 @@ export class AppSettingController {
   // Get all app settings
   static async getAllAppSettings(req: Request, res: Response): Promise<void> {
     try {
-      const { page = 1, limit = 10, scope, key } = req.query;
+      const { page = 1, limit: rawLimit, scope, key } = req.query;
+      const limit = pageSize(rawLimit, 10);
       const skip = (Number(page) - 1) * Number(limit);
 
       const where: any = {};
@@ -265,7 +267,8 @@ export class AppSettingController {
   static async getAppSettingsByScope(req: Request, res: Response): Promise<void> {
     try {
       const { scope } = req.params;
-      const { page = 1, limit = 10 } = req.query;
+      const { page = 1, limit: rawLimit } = req.query;
+      const limit = pageSize(rawLimit, 10);
       const skip = (Number(page) - 1) * Number(limit);
 
       const [appSettings, total] = await Promise.all([

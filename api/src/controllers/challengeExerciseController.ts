@@ -43,6 +43,8 @@ export const getAllChallengeExercises = async (
 ): Promise<void> => {
   try {
     const challengeExercises = await prisma.challengeExercise.findMany({
+      // shortcut: the reply is a bare array with no room for a cursor, so it reads at most 500 rows; page it in the database if the catalog outgrows that.
+      take: 500,
       ...challengeExerciseInclude,
     });
 

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../config/database.js';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
+import { pageSize } from '../utils/pagination.js';
 
 const createPaymentSchema = z.object({
   userId: z.string().min(1, 'User ID is required'),
@@ -20,7 +21,7 @@ const updatePaymentSchema = z.object({
 export const getAllSubscriptionPayments = async (req: Request, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
+    const limit = pageSize(req.query.limit, 10);
     const skip = (page - 1) * limit;
 
     const [payments, total] = await Promise.all([
@@ -246,7 +247,7 @@ export const getPaymentsByUserId = async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
+    const limit = pageSize(req.query.limit, 10);
     const skip = (page - 1) * limit;
 
     if (!userId || typeof userId !== 'string') {

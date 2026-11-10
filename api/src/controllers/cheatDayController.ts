@@ -2,6 +2,7 @@ import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 import { getMediaCategory } from '../middleware/upload.js';
+import { cursorArgs, cursorPage } from '../utils/pagination.js';
 
 // Get all cheat days for a user
 export const getUserCheatDays = async (req: Request, res: Response): Promise<void> => {
@@ -299,7 +300,8 @@ export const deleteCheatDay = async (req: Request, res: Response): Promise<void>
 // Get all cheat days (admin)
 export const getAllCheatDays = async (req: Request, res: Response): Promise<void> => {
   try {
-    const cheatDays = await prisma.cheatDay.findMany({
+    const cheatDaysPage = await prisma.cheatDay.findMany({
+      ...cursorArgs(req.query),
       include: {
         user: {
           select: {
@@ -309,14 +311,14 @@ export const getAllCheatDays = async (req: Request, res: Response): Promise<void
           }
         }
       },
-      orderBy: {
-        loggedAt: 'desc'
-      }
+      orderBy: [{ loggedAt: 'desc' }, { id: 'desc' }]
     });
+    const { items: cheatDays, nextCursor } = cursorPage(cheatDaysPage, req.query);
 
     res.status(200).json({
       success: true,
       data: cheatDays,
+      nextCursor,
       message: 'All cheat days retrieved successfully'
     });
   } catch (error) {

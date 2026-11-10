@@ -2,6 +2,7 @@ import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config/index.js';
+import { pageSize } from '../utils/pagination.js';
 
 // Helper function to get userId from token
 const getUserIdFromToken = (req: Request): string | null => {
@@ -114,7 +115,7 @@ export const getUserSleepLogs = async (req: Request, res: Response) => {
     } = req.query;
 
     const pageNum = parseInt(page as string, 10);
-    const limitNum = parseInt(limit as string, 10);
+    const limitNum = pageSize(limit, 10);
     const skip = (pageNum - 1) * limitNum;
 
     // Build where clause

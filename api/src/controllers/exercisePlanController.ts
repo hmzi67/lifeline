@@ -1,10 +1,13 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database.js';
+import { cursorArgs, cursorPage } from '../utils/pagination.js';
 
 // Get all exercise plans
 export const getAllExercisePlans = async (req: Request, res: Response): Promise<void> => {
   try {
-    const exercisePlans = await prisma.exercisePlan.findMany({
+    const exercisePlansPage = await prisma.exercisePlan.findMany({
+      ...cursorArgs(req.query),
+      orderBy: { id: 'asc' },
       include: {
         exercisePlanWeeks: {
           include: {
@@ -19,10 +22,12 @@ export const getAllExercisePlans = async (req: Request, res: Response): Promise<
         _count: { select: { userActiveExercisePlan: true } }
       }
     });
+    const { items: exercisePlans, nextCursor } = cursorPage(exercisePlansPage, req.query);
 
     res.status(200).json({
       success: true,
       data: exercisePlans,
+      nextCursor,
       message: 'Exercise plans retrieved successfully'
     });
   } catch (error) {

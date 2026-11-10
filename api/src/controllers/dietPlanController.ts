@@ -168,6 +168,8 @@ const getBmiCategory = (bmi: number): string => {
 export const getAllDietPlans = async (req: Request, res: Response): Promise<void> => {
   try {
     const dietPlans = await prisma.dietPlan.findMany({
+      // shortcut: personalization filters and ranks every plan in memory, so it reads at most 500 rows; page it in the database if the catalog outgrows that.
+      take: 500,
       include: {
         // Counts only: these routes are public, so never list who is assigned.
         _count: { select: { userDietPlans: true } },
@@ -496,6 +498,8 @@ export const searchDietPlans = async (req: Request<{}, {}, {}, DietPlanQuery>, r
     }
 
     const dietPlans = await prisma.dietPlan.findMany({
+      // shortcut: search results are ranked in memory, so it reads at most 500 rows; page it in the database if the catalog outgrows that.
+      take: 500,
       where: whereClause,
       include: {
         // Counts only: these routes are public, so never list who is assigned.

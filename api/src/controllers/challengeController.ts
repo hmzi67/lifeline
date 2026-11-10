@@ -20,6 +20,7 @@ import {
 import { getStripeClient } from './paymentController.js';
 import { AppStoreServiceError } from '../services/appStoreService.js';
 import { partialWithoutDefaults } from '../utils/partialWithoutDefaults.js';
+import { cursorArgs, cursorPage } from '../utils/pagination.js';
 
 // ---------------- Types ----------------
 type PaginationQuery = {
@@ -510,15 +511,18 @@ export const submitChallenge = async (req: Request, res: Response): Promise<void
 };
 
 // Admin: challenges waiting for review, oldest first.
-export const getPendingChallenges = async (_req: Request, res: Response): Promise<void> => {
+export const getPendingChallenges = async (req: Request, res: Response): Promise<void> => {
   try {
-    const challenges = await prisma.challenge.findMany({
+    const challengesPage = await prisma.challenge.findMany({
+      ...cursorArgs(req.query),
       where: { approvalStatus: 'PENDING' },
       include: challengeInclude,
       orderBy: [{ createdAt: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
     });
+    const { items: challenges, nextCursor } = cursorPage(challengesPage, req.query);
     sendResponse(res, 200, {
       challenges: challenges.map(c => toPublicChallenge(c, ADMIN_VIEWER, new Map())),
+      nextCursor,
     });
   } catch (err) {
     handleError(err, res);
@@ -597,6 +601,8 @@ export const reportChallenge = async (req: Request<{ id: string }>, res: Respons
 export const getChallengeReports = async (_req: Request, res: Response): Promise<void> => {
   try {
     const reports = await prisma.challengeReport.findMany({
+      // shortcut: reports are grouped by challenge in memory, so the open queue reads at most 500 rows; page it in the database if the catalog outgrows that.
+      take: 500,
       where: { status: 'OPEN' },
       orderBy: { createdAt: 'asc' },
       include: {

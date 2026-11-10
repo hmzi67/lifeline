@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 import { CouponError, findUsableCoupon } from '../services/couponService.js';
 import { partialWithoutDefaults } from '../utils/partialWithoutDefaults.js';
+import { pageSize } from '../utils/pagination.js';
 
 // ─── Validation Schemas ────────────────────────────────────────────────────────
 
@@ -82,7 +83,8 @@ export const createCoupon = async (req: Request, res: Response) => {
 
 export const getAllCoupons = async (req: Request, res: Response) => {
   try {
-    const { page = '1', limit = '20', search, isActive } = req.query;
+    const { page = '1', limit: rawLimit, search, isActive } = req.query;
+    const limit = pageSize(rawLimit, 20);
     const skip = (Number(page) - 1) * Number(limit);
 
     const where: any = {};
