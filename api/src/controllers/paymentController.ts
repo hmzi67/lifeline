@@ -8,6 +8,11 @@ import { findActiveAppStoreLicense } from '../services/subscriptionAccessService
 
 let stripeClient: Stripe | null = null;
 
+// Card errors ("Your card was declined.") are written for the payer; any other error text
+// can expose configuration (price or customer IDs), so it stays in the server log.
+const userFacingStripeMessage = (error: unknown) =>
+  error instanceof Stripe.errors.StripeCardError ? error.message : null;
+
 export const getStripeClient = (): Stripe | null => {
   if (stripeClient) return stripeClient;
 
@@ -419,7 +424,7 @@ export const createSubscription = async (req: Request, res: Response) => {
 
     res.status(500).json({
       success: false,
-      message: error?.message || 'Failed to create subscription',
+      message: userFacingStripeMessage(error) || 'Failed to create subscription',
     });
   }
 };
@@ -525,7 +530,7 @@ export const confirmSubscriptionPayment = async (req: Request, res: Response) =>
 
     res.status(500).json({
       success: false,
-      message: error?.message || 'Failed to confirm subscription',
+      message: userFacingStripeMessage(error) || 'Failed to confirm subscription',
     });
   }
 };
@@ -645,7 +650,7 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
     );
   } catch (err) {
     console.error('Webhook signature verification failed:', err);
-    return res.status(400).send(`Webhook Error: ${err}`);
+    return res.status(400).send('Webhook signature verification failed');
   }
 
   // Stripe redelivers events; the primary key on the event ID makes each one apply once.
