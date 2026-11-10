@@ -19,6 +19,38 @@ const SIZED_DIR = '.sized';
 // One render per file at a time; concurrent requests for the same copy wait for it.
 const inFlight = new Map<string, Promise<void>>();
 
+// sharp is CPU-heavy: cap how many renders run at once and how many may queue. A request
+// that cannot get a slot in time skips the render and gets the full-size original instead.
+const MAX_RENDERS = Number(process.env.IMAGE_MAX_CONCURRENT_RENDERS || 2);
+const MAX_QUEUED = Number(process.env.IMAGE_MAX_QUEUED_RENDERS || 50);
+const SLOT_WAIT_MS = 5000;
+const RENDER_TIMEOUT_SECONDS = 10;
+let activeRenders = 0;
+const waitingRenders: Array<() => void> = [];
+
+/** Runs `job` in a render slot; rejects when the queue is full or no slot frees within SLOT_WAIT_MS. */
+export const withRenderSlot = <T>(job: () => Promise<T>): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const start = () => {
+      activeRenders++;
+      job().then(resolve, reject).finally(() => {
+        activeRenders--;
+        waitingRenders.shift()?.();
+      });
+    };
+    if (activeRenders < MAX_RENDERS) return start();
+    if (waitingRenders.length >= MAX_QUEUED) return reject(new Error('Image render queue is full'));
+    const go = () => {
+      clearTimeout(timer);
+      start();
+    };
+    const timer = setTimeout(() => {
+      waitingRenders.splice(waitingRenders.indexOf(go), 1);
+      reject(new Error('Timed out waiting for an image render slot'));
+    }, SLOT_WAIT_MS);
+    waitingRenders.push(go);
+  });
+
 const render = async (source: string, target: string, width: number) => {
   await fs.promises.mkdir(path.dirname(target), { recursive: true });
   const tmp = `${target}.${randomUUID()}.tmp`;
@@ -26,6 +58,8 @@ const render = async (source: string, target: string, width: number) => {
     // Read it ourselves: sharp caches files by name (a replaced original could come back stale)
     // and holds them open, which blocks replacing the file on Windows.
     await sharp(await fs.promises.readFile(source))
+      // Aborts libvips work on an image that takes too long, instead of letting it run on.
+      .timeout({ seconds: RENDER_TIMEOUT_SECONDS })
       .rotate()
       .resize({ width, withoutEnlargement: true })
       .webp({ quality: 75 })
@@ -73,7 +107,7 @@ router.get('/', async (req, res) => {
     if (!targetStat || targetStat.mtimeMs < sourceStat.mtimeMs) {
       let job = inFlight.get(target);
       if (!job) {
-        job = render(source, target, width).finally(() => inFlight.delete(target));
+        job = withRenderSlot(() => render(source, target, width)).finally(() => inFlight.delete(target));
         inFlight.set(target, job);
       }
       await job;
