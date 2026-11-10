@@ -54,7 +54,7 @@ export const handleError = (error: any, res: Response): void => {
 
   // Handle validation errors (e.g., from Zod)
   if (error.name === 'ZodError') {
-    const errors = error.errors.map((err: any) => ({
+    const errors = error.issues.map((err: any) => ({
       field: err.path.join('.'),
       message: err.message,
     }));

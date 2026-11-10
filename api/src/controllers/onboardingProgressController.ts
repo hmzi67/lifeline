@@ -120,7 +120,7 @@ export const updateOnboardingProgress = async (
     return res.status(400).json({
       success: false,
       message: 'Validation error',
-      errors: parsed.error.errors.map(error => ({
+      errors: parsed.error.issues.map(error => ({
         field: error.path.join('.'),
         message: error.message,
       })),

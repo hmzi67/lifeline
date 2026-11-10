@@ -2,6 +2,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { MIN_CARD_CHARGE } from './paymentController.js';
+import { partialWithoutDefaults } from '../utils/partialWithoutDefaults.js';
 
 const prisma = new PrismaClient();
 
@@ -86,7 +87,7 @@ export const createPricingPlan = async (req: Request, res: Response) => {
             return res.status(400).json({
                 success: false,
                 message: 'Validation error',
-                errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message })),
+                errors: error.issues.map(e => ({ field: e.path.join('.'), message: e.message })),
             });
         }
         if (isDuplicateAppleProductId(error)) {
@@ -100,7 +101,7 @@ export const createPricingPlan = async (req: Request, res: Response) => {
 export const updatePricingPlan = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        const data = pricingPlanSchema.partial().parse(req.body);
+        const data = partialWithoutDefaults(pricingPlanSchema).parse(req.body);
         const existing = await prisma.pricingPlan.findUnique({ where: { id } });
         if (!existing) {
             return res.status(404).json({ success: false, message: 'Pricing plan not found' });
@@ -139,7 +140,7 @@ export const updatePricingPlan = async (req: Request, res: Response) => {
             return res.status(400).json({
                 success: false,
                 message: 'Validation error',
-                errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message })),
+                errors: error.issues.map(e => ({ field: e.path.join('.'), message: e.message })),
             });
         }
         if (isDuplicateAppleProductId(error)) {

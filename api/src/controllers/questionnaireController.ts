@@ -119,8 +119,8 @@ const handleError = (res: Response, error: any, operation: string) => {
     return res.status(400).json({
       success: false,
       // The app shows `message`, so lead with the actual reason.
-      message: error.errors[0]?.message || 'Validation error',
-      errors: error.errors.map(err => ({
+      message: error.issues[0]?.message || 'Validation error',
+      errors: error.issues.map(err => ({
         field: err.path.join('.'),
         message: err.message,
       })),

@@ -4,7 +4,7 @@ import { prisma } from '../config/database.js';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 
 const meditationLogSchema = z.object({
-  meditationId: z.string({ required_error: 'meditationId is required' }).trim().min(1, 'meditationId is required'),
+  meditationId: z.string({ error: 'meditationId is required' }).trim().min(1, 'meditationId is required'),
   // Seconds actually listened; a session is at most a few hours.
   durationSeconds: z.coerce.number().int().min(0).max(6 * 60 * 60).optional().nullable(),
   // A meditation added later to a missed day; defaults to now. Up to a week back, never ahead.
@@ -42,7 +42,7 @@ export const createMeditationLog = async (req: Request, res: Response) => {
 
   const parsed = meditationLogSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ success: false, message: parsed.error.errors[0]?.message ?? 'Invalid meditation log' });
+    return res.status(400).json({ success: false, message: parsed.error.issues[0]?.message ?? 'Invalid meditation log' });
   }
 
   try {

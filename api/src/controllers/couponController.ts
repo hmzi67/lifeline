@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 import { CouponError, findUsableCoupon } from '../services/couponService.js';
+import { partialWithoutDefaults } from '../utils/partialWithoutDefaults.js';
 
 const prisma = new PrismaClient();
 
@@ -27,7 +28,7 @@ const createCouponSchema = z.object({
   expiresAt: z.string().datetime().optional().nullable(),
 });
 
-const updateCouponSchema = createCouponSchema.partial().omit({ code: true });
+const updateCouponSchema = partialWithoutDefaults(createCouponSchema).omit({ code: true });
 
 const validateCouponSchema = z.object({
   code: z.string().min(1, 'Coupon code is required'),
@@ -72,7 +73,7 @@ export const createCoupon = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ success: false, message: 'Validation error', errors: error.errors });
+      return res.status(400).json({ success: false, message: 'Validation error', errors: error.issues });
     }
     console.error('createCoupon error:', error);
     return res.status(500).json({ success: false, message: 'Failed to create coupon', error: error.message });
@@ -171,7 +172,7 @@ export const updateCoupon = async (req: Request, res: Response) => {
     return res.status(200).json({ success: true, data: coupon, message: 'Coupon updated successfully' });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ success: false, message: 'Validation error', errors: error.errors });
+      return res.status(400).json({ success: false, message: 'Validation error', errors: error.issues });
     }
     console.error('updateCoupon error:', error);
     return res.status(500).json({ success: false, message: 'Failed to update coupon', error: error.message });
@@ -224,7 +225,7 @@ export const validateCoupon = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ success: false, message: 'Validation error', errors: error.errors });
+      return res.status(400).json({ success: false, message: 'Validation error', errors: error.issues });
     }
     if (error instanceof CouponError) {
       return res.status(error.statusCode).json({ success: false, message: error.message });

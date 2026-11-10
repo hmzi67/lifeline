@@ -415,7 +415,7 @@ export const createSubscription = async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         message: 'Validation error',
-        details: error.errors,
+        details: error.issues,
       });
     }
 
@@ -521,7 +521,7 @@ export const confirmSubscriptionPayment = async (req: Request, res: Response) =>
       return res.status(400).json({
         success: false,
         message: 'Validation error',
-        details: error.errors,
+        details: error.issues,
       });
     }
 

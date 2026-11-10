@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
+import { partialWithoutDefaults } from '../utils/partialWithoutDefaults.js';
 
 const prisma = new PrismaClient();
 
@@ -27,7 +28,7 @@ const createReferralSchema = z.object({
   expiresAt: z.string().datetime().optional().nullable(),
 });
 
-const updateReferralSchema = createReferralSchema.partial().omit({ code: true, referrerId: true });
+const updateReferralSchema = partialWithoutDefaults(createReferralSchema).omit({ code: true, referrerId: true });
 
 const validateReferralSchema = z.object({
   code: z.string().min(1, 'Referral code is required'),
@@ -77,7 +78,7 @@ export const createReferralCode = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ success: false, message: 'Validation error', errors: error.errors });
+      return res.status(400).json({ success: false, message: 'Validation error', errors: error.issues });
     }
     console.error('createReferralCode error:', error);
     return res.status(500).json({ success: false, message: 'Failed to create referral code', error: error.message });
@@ -177,7 +178,7 @@ export const updateReferralCode = async (req: Request, res: Response) => {
     return res.status(200).json({ success: true, data: referralCode, message: 'Referral code updated successfully' });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ success: false, message: 'Validation error', errors: error.errors });
+      return res.status(400).json({ success: false, message: 'Validation error', errors: error.issues });
     }
     console.error('updateReferralCode error:', error);
     return res.status(500).json({ success: false, message: 'Failed to update referral code', error: error.message });
@@ -265,7 +266,7 @@ export const validateReferralCode = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ success: false, message: 'Validation error', errors: error.errors });
+      return res.status(400).json({ success: false, message: 'Validation error', errors: error.issues });
     }
     console.error('validateReferralCode error:', error);
     return res.status(500).json({ success: false, message: 'Failed to validate referral code', error: error.message });

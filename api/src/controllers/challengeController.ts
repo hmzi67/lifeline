@@ -19,6 +19,7 @@ import {
 } from '../services/challengePaymentService.js';
 import { getStripeClient } from './paymentController.js';
 import { AppStoreServiceError } from '../services/appStoreService.js';
+import { partialWithoutDefaults } from '../utils/partialWithoutDefaults.js';
 
 // ---------------- Types ----------------
 type PaginationQuery = {
@@ -99,7 +100,7 @@ const handleError = (err: unknown, res: Response): void => {
   }
 
   if (err instanceof z.ZodError) {
-    const errors = err.errors.map(e => ({
+    const errors = err.issues.map(e => ({
       field: e.path.join('.'),
       message: e.message,
     }));
@@ -134,7 +135,7 @@ const validateId = (id: string): string => {
 const blankToUndefined = (value: unknown) => (value === '' || value === null ? undefined : value);
 const optionalText = z.preprocess(blankToUndefined, z.string().optional());
 // 'YYYY-MM-DD' from date inputs; stored in @db.Date columns.
-const optionalDate = z.preprocess(blankToUndefined, z.coerce.date({ invalid_type_error: 'Invalid date' }).optional());
+const optionalDate = z.preprocess(blankToUndefined, z.coerce.date({ error: 'Invalid date' }).optional());
 const dateTime = z.string().datetime('Invalid scheduledAt datetime').transform(value => new Date(value));
 
 const challengeFields = z.object({
@@ -157,7 +158,7 @@ const endsAfterStart = (data: { startDate?: Date; endDate?: Date }) =>
 const endsAfterStartIssue = { message: 'End date must be on or after the start date', path: ['endDate'] };
 
 const challengeSchema = challengeFields.refine(endsAfterStart, endsAfterStartIssue);
-const challengeUpdateSchema = challengeFields.partial().refine(endsAfterStart, endsAfterStartIssue);
+const challengeUpdateSchema = partialWithoutDefaults(challengeFields).refine(endsAfterStart, endsAfterStartIssue);
 
 // What a regular user can submit for review from the app.
 const submissionSchema = z
