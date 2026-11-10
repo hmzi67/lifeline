@@ -75,7 +75,7 @@ interface DietPlanApi {
     gender?: string | null;
     goal?: string | null;
     createdAt?: string;
-    userDietPlans?: { user: { id: string; email: string; username: string } }[];
+    _count?: { userDietPlans?: number };
     challengeDiets?: { challenge: { id: string; name: string; status: string } }[];
 }
 
@@ -1485,7 +1485,7 @@ const DietComponent: React.FC = () => {
                             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Active Users</p>
                         </div>
                         <p className="text-3xl font-bold text-gray-900">
-                            {dietPlans.reduce((acc, p) => acc + (p.userDietPlans?.length || 0), 0)}
+                            {dietPlans.reduce((acc, p) => acc + (p._count?.userDietPlans || 0), 0)}
                         </p>
                     </div>
                     <div className="bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-100 rounded-xl p-5">
@@ -1562,7 +1562,7 @@ const DietComponent: React.FC = () => {
                                             </td>
                                             <td className="px-5 py-4 whitespace-nowrap">
                                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-teal-100 text-teal-700">
-                                                    {plan.userDietPlans?.length || 0} users
+                                                    {plan._count?.userDietPlans || 0} users
                                                 </span>
                                             </td>
                                             <td className="px-5 py-4 whitespace-nowrap text-right">

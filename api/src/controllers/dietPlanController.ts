@@ -169,17 +169,8 @@ export const getAllDietPlans = async (req: Request, res: Response): Promise<void
   try {
     const dietPlans = await prisma.dietPlan.findMany({
       include: {
-        userDietPlans: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        },
+        // Counts only: these routes are public, so never list who is assigned.
+        _count: { select: { userDietPlans: true } },
         challengeDiets: {
           include: {
             challenge: {
@@ -275,17 +266,8 @@ export const getDietPlanById = async (req: Request, res: Response): Promise<void
     const dietPlan = await prisma.dietPlan.findUnique({
       where: { id },
       include: {
-        userDietPlans: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        },
+        // Counts only: these routes are public, so never list who is assigned.
+        _count: { select: { userDietPlans: true } },
         challengeDiets: {
           include: {
             challenge: {
@@ -516,17 +498,8 @@ export const searchDietPlans = async (req: Request<{}, {}, {}, DietPlanQuery>, r
     const dietPlans = await prisma.dietPlan.findMany({
       where: whereClause,
       include: {
-        userDietPlans: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        }
+        // Counts only: these routes are public, so never list who is assigned.
+        _count: { select: { userDietPlans: true } }
       }
     });
 

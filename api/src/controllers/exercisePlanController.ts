@@ -15,17 +15,8 @@ export const getAllExercisePlans = async (req: Request, res: Response): Promise<
             }
           }
         },
-        userActiveExercisePlan: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        }
+        // Counts only: these routes are public, so never list who is assigned.
+        _count: { select: { userActiveExercisePlan: true } }
       }
     });
 

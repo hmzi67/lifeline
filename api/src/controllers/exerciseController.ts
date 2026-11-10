@@ -34,17 +34,8 @@ export const getAllExercises = async (req: Request, res: Response): Promise<void
   try {
     const exercises = await prisma.exercise.findMany({
       include: {
-        userExercises: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        },
+        // Counts only: these routes are public, so never list who is assigned.
+        _count: { select: { userExercises: true } },
         challengeExercises: {
           include: {
             challenge: {
@@ -83,17 +74,8 @@ export const getExerciseById = async (req: Request, res: Response): Promise<void
       where: { id },
       include: {
         exerciseDetails: true,
-        userExercises: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        },
+        // Counts only: these routes are public, so never list who is assigned.
+        _count: { select: { userExercises: true } },
         challengeExercises: {
           include: {
             challenge: {
@@ -296,17 +278,8 @@ export const searchExercises = async (req: Request<{}, {}, {}, ExerciseQuery>, r
     const exercises = await prisma.exercise.findMany({
       where: whereClause,
       include: {
-        userExercises: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        }
+        // Counts only: these routes are public, so never list who is assigned.
+        _count: { select: { userExercises: true } }
       }
     });
 
@@ -338,17 +311,8 @@ export const getExercisesByPurpose = async (req: Request<{ purpose: string }>, r
         }
       },
       include: {
-        userExercises: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        }
+        // Counts only: these routes are public, so never list who is assigned.
+        _count: { select: { userExercises: true } }
       }
     });
 
