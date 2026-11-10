@@ -1122,3 +1122,12 @@ model Notification {
   @@index([userId, createdAt])
   @@map("notifications")
 }
+
+// Stripe event IDs already handled, so a redelivered webhook is applied once.
+model ProcessedStripeEvent {
+  id          String   @id @db.VarChar(255)
+  type        String   @db.VarChar(100)
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@map("processed_stripe_events")
+}

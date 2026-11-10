@@ -32,17 +32,31 @@ export const applyDiscount = (price: number, discountPercent: number) =>
 
 /**
  * Records that `userId` used the coupon for `paymentId`. Safe to call more than once
- * for the same payment (the app's confirm call and Stripe's webhook can both finalize).
+ * for the same payment (the app's confirm call and Stripe's webhook can both finalize),
+ * and safe under concurrency: call it inside a transaction so both writes commit together.
+ * Returns false when nothing was recorded (unknown code, already recorded, or no uses left).
  */
 export const recordCouponUsage = async (db: Db, code: string, userId: string, paymentId: string) => {
   const coupon = await db.couponCode.findUnique({ where: { code: code.trim().toUpperCase() } });
-  if (!coupon) return;
+  if (!coupon) return false;
 
-  const existing = await db.couponUsage.findUnique({
-    where: { couponId_userId: { couponId: coupon.id, userId } },
+  // The (couponId, userId) unique key makes a concurrent second insert a no-op.
+  const { count: inserted } = await db.couponUsage.createMany({
+    data: [{ couponId: coupon.id, userId, paymentId }],
+    skipDuplicates: true,
   });
-  if (existing) return;
+  if (!inserted) return false;
 
-  await db.couponUsage.create({ data: { couponId: coupon.id, userId, paymentId } });
-  await db.couponCode.update({ where: { id: coupon.id }, data: { currentUses: { increment: 1 } } });
+  // Row-level conditional increment: two redemptions racing for the last use cannot both win.
+  const { count: incremented } = await db.couponCode.updateMany({
+    where: { id: coupon.id, currentUses: { lt: db.couponCode.fields.maxUses } },
+    data: { currentUses: { increment: 1 } },
+  });
+  if (!incremented) {
+    await db.couponUsage.deleteMany({ where: { couponId: coupon.id, userId, paymentId } });
+    // The payment already succeeded at the discounted price, so access is still granted.
+    console.warn(`Coupon ${coupon.code} had no uses left when payment ${paymentId} was finalized`);
+    return false;
+  }
+  return true;
 };

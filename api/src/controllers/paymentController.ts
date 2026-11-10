@@ -650,94 +650,106 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
     return res.status(400).send(`Webhook Error: ${err}`);
   }
 
-  // Handle the event
-  switch (event.type) {
-    case 'payment_intent.succeeded': {
-      const paymentIntent = event.data.object as Stripe.PaymentIntent;
-      console.log('PaymentIntent succeeded:', paymentIntent.id);
-      if (await handleChallengePaymentIntent(paymentIntent)) break;
-      const payment = await prisma.subscriptionPayment.findFirst({
-        where: { stripePaymentIntentId: paymentIntent.id },
-        select: { id: true },
-      });
-      if (payment) await finalizePaidAccess(stripe, payment.id, paymentIntent);
-      break;
-    }
+  // Stripe redelivers events; the primary key on the event ID makes each one apply once.
+  const { count: claimed } = await prisma.processedStripeEvent.createMany({
+    data: [{ id: event.id, type: event.type }],
+    skipDuplicates: true,
+  });
+  if (!claimed) return res.json({ received: true, duplicate: true });
 
-    case 'setup_intent.succeeded': {
-      const setupIntent = event.data.object as Stripe.SetupIntent;
-      console.log('SetupIntent succeeded:', setupIntent.id);
-      const payment = await prisma.subscriptionPayment.findFirst({
-        where: { stripeSetupIntentId: setupIntent.id },
-        select: { id: true },
-      });
-      if (payment) await finalizeTrialAccess(stripe, payment.id, setupIntent);
-      break;
-    }
-
-    case 'payment_intent.payment_failed': {
-      const failedPayment = event.data.object as Stripe.PaymentIntent;
-      console.log('PaymentIntent failed:', failedPayment.id);
-      if (await handleChallengePaymentIntent(failedPayment)) break;
-      await prisma.subscriptionPayment.updateMany({
-        where: { stripePaymentIntentId: failedPayment.id } as any,
-        data: { status: 'FAILED' } as any,
-      });
-      break;
-    }
-
-    case 'invoice.payment_succeeded': {
-      const invoice = event.data.object as Stripe.Invoice;
-      const subscriptionId = (invoice as any).subscription;
-      const paymentIntentId = (invoice as any).payment_intent;
-
-      if (typeof subscriptionId === 'string') {
-        await prisma.subscriptionPayment.updateMany({
-          where: { stripeSubscriptionId: subscriptionId } as any,
-          data: {
-            status: 'COMPLETED',
-            stripePaymentIntentId: typeof paymentIntentId === 'string' ? paymentIntentId : undefined,
-          } as any,
+  try {
+    switch (event.type) {
+      case 'payment_intent.succeeded': {
+        const paymentIntent = event.data.object as Stripe.PaymentIntent;
+        console.log('PaymentIntent succeeded:', paymentIntent.id);
+        if (await handleChallengePaymentIntent(paymentIntent)) break;
+        const payment = await prisma.subscriptionPayment.findFirst({
+          where: { stripePaymentIntentId: paymentIntent.id },
+          select: { id: true },
         });
+        if (payment) await finalizePaidAccess(stripe, payment.id, paymentIntent);
+        break;
       }
-      break;
-    }
 
-    case 'invoice.payment_failed': {
-      const invoice = event.data.object as Stripe.Invoice;
-      const subscriptionId = (invoice as any).subscription;
+      case 'setup_intent.succeeded': {
+        const setupIntent = event.data.object as Stripe.SetupIntent;
+        console.log('SetupIntent succeeded:', setupIntent.id);
+        const payment = await prisma.subscriptionPayment.findFirst({
+          where: { stripeSetupIntentId: setupIntent.id },
+          select: { id: true },
+        });
+        if (payment) await finalizeTrialAccess(stripe, payment.id, setupIntent);
+        break;
+      }
 
-      if (typeof subscriptionId === 'string') {
+      case 'payment_intent.payment_failed': {
+        const failedPayment = event.data.object as Stripe.PaymentIntent;
+        console.log('PaymentIntent failed:', failedPayment.id);
+        if (await handleChallengePaymentIntent(failedPayment)) break;
         await prisma.subscriptionPayment.updateMany({
-          where: { stripeSubscriptionId: subscriptionId } as any,
+          where: { stripePaymentIntentId: failedPayment.id } as any,
           data: { status: 'FAILED' } as any,
         });
+        break;
       }
-      break;
+
+      case 'invoice.payment_succeeded': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const subscriptionId = (invoice as any).subscription;
+        const paymentIntentId = (invoice as any).payment_intent;
+
+        if (typeof subscriptionId === 'string') {
+          await prisma.subscriptionPayment.updateMany({
+            where: { stripeSubscriptionId: subscriptionId } as any,
+            data: {
+              status: 'COMPLETED',
+              stripePaymentIntentId: typeof paymentIntentId === 'string' ? paymentIntentId : undefined,
+            } as any,
+          });
+        }
+        break;
+      }
+
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const subscriptionId = (invoice as any).subscription;
+
+        if (typeof subscriptionId === 'string') {
+          await prisma.subscriptionPayment.updateMany({
+            where: { stripeSubscriptionId: subscriptionId } as any,
+            data: { status: 'FAILED' } as any,
+          });
+        }
+        break;
+      }
+
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object as Stripe.Subscription;
+        const status = subscription.status === 'active' || subscription.status === 'trialing'
+          ? 'COMPLETED'
+          : subscription.status === 'canceled'
+          ? 'CANCELLED'
+          : 'PENDING';
+
+        await prisma.subscriptionPayment.updateMany({
+          where: { stripeSubscriptionId: subscription.id } as any,
+          data: {
+            status,
+            currentPeriodEnd: getCurrentPeriodEnd(subscription),
+            cancelAtPeriodEnd: !!subscription.cancel_at_period_end,
+          } as any,
+        });
+        break;
+      }
+
+      default:
+        console.log(`Unhandled event type ${event.type}`);
     }
-
-    case 'customer.subscription.updated':
-    case 'customer.subscription.deleted': {
-      const subscription = event.data.object as Stripe.Subscription;
-      const status = subscription.status === 'active' || subscription.status === 'trialing'
-        ? 'COMPLETED'
-        : subscription.status === 'canceled'
-        ? 'CANCELLED'
-        : 'PENDING';
-
-      await prisma.subscriptionPayment.updateMany({
-        where: { stripeSubscriptionId: subscription.id } as any,
-        data: {
-          status,
-          currentPeriodEnd: getCurrentPeriodEnd(subscription),
-          cancelAtPeriodEnd: !!subscription.cancel_at_period_end,
-        } as any,
-      });
-      break;
-    }
-
-    default:
-      console.log(`Unhandled event type ${event.type}`);
+  } catch (error) {
+    // Release the claim so Stripe's retry of this event is processed instead of skipped.
+    await prisma.processedStripeEvent.deleteMany({ where: { id: event.id } }).catch(() => undefined);
+    throw error;
   }
 
   res.json({ received: true });
