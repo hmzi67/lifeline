@@ -1,9 +1,8 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config/index.js';
-
-const prisma = new PrismaClient();
+import { pageSize } from '../utils/pagination.js';
 
 // Helper function to get userId from token
 const getUserIdFromToken = (req: Request): string | null => {
@@ -116,7 +115,7 @@ export const getUserSleepLogs = async (req: Request, res: Response) => {
     } = req.query;
 
     const pageNum = parseInt(page as string, 10);
-    const limitNum = parseInt(limit as string, 10);
+    const limitNum = pageSize(limit, 10);
     const skip = (pageNum - 1) * limitNum;
 
     // Build where clause
@@ -316,8 +315,8 @@ export const deleteSleepLog = async (req: Request, res: Response) => {
       });
     }
 
-    // Verify ownership (allow if userId matches or if log has no owner)
-    if (existingLog.userId && existingLog.userId !== userId) {
+    // An ownerless log belongs to nobody, so nobody may delete it through this endpoint.
+    if (existingLog.userId !== userId) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to delete this sleep log',

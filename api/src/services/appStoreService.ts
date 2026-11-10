@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import {
   AppStoreServerAPIClient,
   AutoRenewStatus,
@@ -15,8 +15,6 @@ import {
   VerificationException,
   VerificationStatus,
 } from '@apple/app-store-server-library';
-
-const prisma = new PrismaClient();
 
 const ENTITLEMENT_ID = 'lifeline_vip';
 const DEFAULT_BUNDLE_ID = 'com.irtaza.lifeline';

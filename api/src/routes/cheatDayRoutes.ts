@@ -11,7 +11,9 @@ import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
 import { cheatDayEligibility } from '../services/cheatDayEligibility.js';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
-import { mediaUpload } from '../middleware/upload.js';
+import { imageUpload } from '../middleware/upload.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { cheatDayBody } from '../validators/trackingSchemas.js';
 
 const router = Router();
 
@@ -40,10 +42,10 @@ router.get('/user/:userId', authenticate, getUserCheatDays);
 router.get('/:id', authenticate, getCheatDayById);
 
 // POST /api/cheat-days - Log a cheat day meal
-router.post('/', authenticate, mediaUpload.single('file'), logCheatDay);
+router.post('/', authenticate, imageUpload.single('file'), validateBody(cheatDayBody), logCheatDay);
 
 // PUT /api/cheat-days/:id - Update cheat day
-router.put('/:id', authenticate, mediaUpload.single('file'), updateCheatDay);
+router.put('/:id', authenticate, imageUpload.single('file'), validateBody(cheatDayBody), updateCheatDay);
 
 // DELETE /api/cheat-days/:id - Delete cheat day
 router.delete('/:id', authenticate, deleteCheatDay);

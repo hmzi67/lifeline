@@ -1,9 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config/index.js';
-
-const prisma = new PrismaClient();
 
 interface DietPlanQuery {
   query?: string;
@@ -170,18 +168,11 @@ const getBmiCategory = (bmi: number): string => {
 export const getAllDietPlans = async (req: Request, res: Response): Promise<void> => {
   try {
     const dietPlans = await prisma.dietPlan.findMany({
+      // shortcut: personalization filters and ranks every plan in memory, so it reads at most 500 rows; page it in the database if the catalog outgrows that.
+      take: 500,
       include: {
-        userDietPlans: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        },
+        // Counts only: these routes are public, so never list who is assigned.
+        _count: { select: { userDietPlans: true } },
         challengeDiets: {
           include: {
             challenge: {
@@ -277,17 +268,8 @@ export const getDietPlanById = async (req: Request, res: Response): Promise<void
     const dietPlan = await prisma.dietPlan.findUnique({
       where: { id },
       include: {
-        userDietPlans: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        },
+        // Counts only: these routes are public, so never list who is assigned.
+        _count: { select: { userDietPlans: true } },
         challengeDiets: {
           include: {
             challenge: {
@@ -516,19 +498,12 @@ export const searchDietPlans = async (req: Request<{}, {}, {}, DietPlanQuery>, r
     }
 
     const dietPlans = await prisma.dietPlan.findMany({
+      // shortcut: search results are ranked in memory, so it reads at most 500 rows; page it in the database if the catalog outgrows that.
+      take: 500,
       where: whereClause,
       include: {
-        userDietPlans: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        }
+        // Counts only: these routes are public, so never list who is assigned.
+        _count: { select: { userDietPlans: true } }
       }
     });
 

@@ -98,6 +98,8 @@ const AuthForm: React.FC<AuthFormProps> = ({ mode, onSubmit, loading, errors = {
           value={formData.password}
           onChange={handleInputChange}
           placeholder="Password"
+          // New passwords need 12+ characters; sign-in must still accept older, shorter ones.
+          minLength={mode === 'signup' ? 12 : undefined}
           className={`w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-colors ${errors.password ? "border-red-400" : ""}`}
           required
         />

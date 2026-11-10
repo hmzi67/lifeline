@@ -1,8 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
-
-const prisma = new PrismaClient();
+import { cursorArgs, cursorPage } from '../utils/pagination.js';
 
 const DEFAULT_WATER_GOAL_ML = 2500;
 
@@ -233,7 +232,8 @@ export const deleteUserWaterGoal = async (req: Request, res: Response): Promise<
 // Get all water goals (admin)
 export const getAllWaterGoals = async (req: Request, res: Response): Promise<void> => {
   try {
-    const waterGoals = await prisma.userWaterGoal.findMany({
+    const waterGoalsPage = await prisma.userWaterGoal.findMany({
+      ...cursorArgs(req.query),
       include: {
         user: {
           select: {
@@ -243,14 +243,14 @@ export const getAllWaterGoals = async (req: Request, res: Response): Promise<voi
           }
         }
       },
-      orderBy: {
-        updatedAt: 'desc'
-      }
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }]
     });
+    const { items: waterGoals, nextCursor } = cursorPage(waterGoalsPage, req.query);
 
     res.status(200).json({
       success: true,
       data: waterGoals,
+      nextCursor,
       message: 'Water goals retrieved successfully'
     });
   } catch (error) {

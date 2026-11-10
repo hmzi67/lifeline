@@ -1,10 +1,11 @@
-import React, { Suspense, lazy, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { Sidebar, Header } from '@/components/layout';
 import LoginPage from '@/components/pages/LoginPage';
 import { navigationItems } from '@/components/constants';
 import { useAuthStore } from '@/store/useAuthStore';
+import { authService } from '@/services/authService';
 
 // Each section is its own chunk, so the login screen doesn't download the whole panel.
 const DashboardComponent = lazy(() => import('@/components/dashboard').then((m) => ({ default: m.DashboardComponent })));
@@ -105,9 +106,33 @@ const AdminLayout: React.FC = () => {
 };
 
 // ── Auth guard ────────────────────────────────────────────────────────────────
+// The persisted flag only says someone signed in here once. The server decides: nothing of
+// the panel renders until /auth/me confirms an admin, and anyone else is signed out.
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-    return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
+    const logout = useAuthStore((s) => s.logout);
+    const [isAdmin, setIsAdmin] = useState(false);
+
+    useEffect(() => {
+        if (!isAuthenticated) return;
+        let live = true;
+        authService
+            .getCurrentUser()
+            .then((res) => res?.data?.user?.role?.name?.toLowerCase() === 'admin')
+            .catch(() => false)
+            .then((admin) => {
+                if (!live) return;
+                // Clearing the store also stops the login page sending us straight back here.
+                if (admin) setIsAdmin(true);
+                else logout();
+            });
+        return () => {
+            live = false;
+        };
+    }, [isAuthenticated, logout]);
+
+    if (!isAuthenticated) return <Navigate to="/login" replace />;
+    return isAdmin ? <>{children}</> : <SectionFallback />;
 };
 
 // ── Root app ──────────────────────────────────────────────────────────────────

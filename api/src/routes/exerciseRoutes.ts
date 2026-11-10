@@ -10,6 +10,8 @@ import {
 } from '../controllers/exerciseController.js';
 import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { exerciseBody } from '../validators/contentSchemas.js';
 
 const router = Router();
 
@@ -26,10 +28,10 @@ router.get('/purpose/:purpose', getExercisesByPurpose);
 router.get('/:id', getExerciseById);
 
 // POST /api/exercises - Create new exercise
-router.post('/', authenticate, authorize(['admin']), createExercise);
+router.post('/', authenticate, authorize(['admin']), validateBody(exerciseBody), createExercise);
 
 // PUT /api/exercises/:id - Update exercise
-router.put('/:id', authenticate, authorize(['admin']), updateExercise);
+router.put('/:id', authenticate, authorize(['admin']), validateBody(exerciseBody), updateExercise);
 
 // DELETE /api/exercises/:id - Delete exercise
 router.delete('/:id', authenticate, authorize(['admin']), deleteExercise);

@@ -1,8 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import { z } from 'zod';
-
-const prisma = new PrismaClient();
 
 // Column limits from schema.prisma, checked here so a long value is a 400, not a database error.
 const mealSchema = z.object({

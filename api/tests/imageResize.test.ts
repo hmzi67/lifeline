@@ -10,7 +10,7 @@ import sharp from 'sharp';
 const uploadRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'img-resize-'));
 jest.mock('../src/middleware/upload', () => ({ getUploadRootPath: () => uploadRoot }));
 
-import imageRoutes from '../src/routes/imageRoutes';
+import imageRoutes, { withRenderSlot } from '../src/routes/imageRoutes';
 
 let server: Server;
 let base: string;
@@ -83,5 +83,42 @@ describe('GET /api/img', () => {
 
   it('returns 404 for a missing image', async () => {
     expect((await get('src=/uploads/image/content/missing.jpg&w=480')).status).toBe(404);
+  });
+});
+
+describe('render slots', () => {
+  const deferred = () => {
+    let release!: () => void;
+    const done = new Promise<void>((resolve) => { release = resolve; });
+    return { done, release };
+  };
+
+  it('runs at most two renders at once and starts queued ones as slots free up', async () => {
+    let running = 0, peak = 0;
+    const gates = Array.from({ length: 5 }, deferred);
+    const jobs = gates.map((gate) => withRenderSlot(async () => {
+      running++; peak = Math.max(peak, running);
+      await gate.done;
+      running--;
+    }));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(running).toBe(2);
+    gates.forEach((gate) => gate.release());
+    await Promise.all(jobs);
+    expect(peak).toBe(2);
+  });
+
+  it('gives up on a slot that does not free in time, without running the job', async () => {
+    jest.useFakeTimers();
+    const gate = deferred();
+    const busy = [withRenderSlot(() => gate.done), withRenderSlot(() => gate.done)];
+    const skipped = jest.fn(async () => undefined);
+    const waiting = withRenderSlot(skipped);
+    jest.advanceTimersByTime(5001);
+    await expect(waiting).rejects.toThrow('Timed out waiting for an image render slot');
+    gate.release();
+    await Promise.all(busy);
+    expect(skipped).not.toHaveBeenCalled();
+    jest.useRealTimers();
   });
 });

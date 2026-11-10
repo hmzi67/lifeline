@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../config/database.js';
+import { cursorArgs, cursorPage } from '../utils/pagination.js';
 
 interface AssignDietPlanBody {
   userId: string;
@@ -16,7 +15,9 @@ interface UpdateUserDietPlanBody {
 // Get all user diet plans
 export const getAllUserDietPlans = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userDietPlans = await prisma.userDietPlan.findMany({
+    const userDietPlansPage = await prisma.userDietPlan.findMany({
+      ...cursorArgs(req.query),
+      orderBy: { id: 'asc' },
       include: {
         user: {
           select: {
@@ -36,10 +37,12 @@ export const getAllUserDietPlans = async (req: Request, res: Response): Promise<
         }
       }
     });
+    const { items: userDietPlans, nextCursor } = cursorPage(userDietPlansPage, req.query);
 
     res.status(200).json({
       success: true,
       data: userDietPlans,
+      nextCursor,
       message: 'User diet plans retrieved successfully'
     });
   } catch (error) {

@@ -21,7 +21,6 @@ const runGuard = (requestPath: string) => {
 describe('upload safety', () => {
   it('names stored files from the MIME type, not the client filename', () => {
     expect(path.extname(storedFileName('image/png'))).toBe('.png');
-    expect(path.extname(storedFileName('image/svg+xml'))).toBe('.svg');
     expect(path.extname(storedFileName('audio/mpeg'))).toBe('.mp3');
     expect(storedFileName('image/png')).not.toBe(storedFileName('image/png'));
   });
@@ -35,7 +34,8 @@ describe('upload safety', () => {
     },
   );
 
-  it.each(['/image/x.png', '/image/x.JPG', '/image/legacy.jpeg', '/audio/x.mp3', '/video/x.mp4', '/image/x.svg'])('serves media file %s', (requestPath) => {
+  // SVG can no longer be uploaded; files stored earlier stay viewable.
+  it.each(['/image/x.png', '/image/x.JPG', '/image/legacy.jpeg', '/audio/x.mp3', '/video/x.mp4', '/image/legacy.svg'])('serves media file %s', (requestPath) => {
     const { res, next } = runGuard(requestPath);
     expect(res.statusCode).toBe(0);
     expect(next).toHaveBeenCalledTimes(1);

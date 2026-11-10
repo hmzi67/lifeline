@@ -71,6 +71,13 @@ describe('user plan route wiring', () => {
     }
   });
 
+  it('questionnaire authenticates before any route instead of decoding the token itself', () => {
+    const stack: Layer[] = require('../src/routes/questionnaireRoutes').default.stack;
+    const firstRoute = stack.findIndex((layer) => layer.route);
+    expect(stack.findIndex((layer) => !layer.route && layer.handle === mockAuthenticate)).toBe(firstRoute - 1);
+    expect(stack.filter((layer) => layer.route).length).toBeGreaterThan(50);
+  });
+
   it('mounts exercise progress and warm-up, which the app calls', () => {
     const appSource = require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/app.ts'), 'utf8');
     expect(appSource).toMatch(/app\.use\('\/api\/user-exercise-progress', userExerciseProgressRoutes\)/);

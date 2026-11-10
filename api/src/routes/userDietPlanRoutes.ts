@@ -12,6 +12,8 @@ import {
 import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
 import { bindBodyUserIdToCaller, requireRecordOwner, requireSelfOrAdmin } from '../middleware/ownership.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { userDietPlanBody } from '../validators/trackingSchemas.js';
 
 const router = Router();
 
@@ -31,10 +33,10 @@ router.get('/user/:userId', requireSelfOrAdmin(), getUserDietPlansByUserId);
 router.get('/diet/:dietId/users', authorize(['admin']), getUsersByDietPlanId);
 
 // POST /api/user-diet-plans/assign - Assign diet plan to the caller
-router.post('/assign', bindBodyUserIdToCaller, assignDietPlanToUser);
+router.post('/assign', bindBodyUserIdToCaller, validateBody(userDietPlanBody), assignDietPlanToUser);
 
 // PUT /api/user-diet-plans/:id - Update user diet plan assignment (can move it between users)
-router.put('/:id', authorize(['admin']), updateUserDietPlan);
+router.put('/:id', authorize(['admin']), validateBody(userDietPlanBody), updateUserDietPlan);
 
 // DELETE /api/user-diet-plans/:id - Remove user diet plan assignment
 router.delete('/:id', requireRecordOwner('userDietPlan'), removeUserDietPlan);

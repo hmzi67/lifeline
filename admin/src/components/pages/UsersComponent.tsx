@@ -114,8 +114,8 @@ const UsersComponent: React.FC = () => {
     };
 
     const handleCreateUser = async () => {
-        if (!newUser.email || !newUser.username || !newUser.password) {
-            return; // Basic validation
+        if (!newUser.email || !newUser.username || newUser.password.length < 12) {
+            return; // Basic validation; the API also requires 12+ character passwords
         }
 
         setIsCreatingUser(true);
@@ -675,7 +675,7 @@ const UsersComponent: React.FC = () => {
                                 </Label>
                                 <Input
                                     type="password"
-                                    placeholder="Enter password"
+                                    placeholder="At least 12 characters"
                                     value={newUser.password}
                                     onChange={(e) => handleInputChange('password', e.target.value)}
                                     className="mt-1"
@@ -718,7 +718,7 @@ const UsersComponent: React.FC = () => {
                                 size="sm"
                                 className="flex-1 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600"
                                 onClick={handleCreateUser}
-                                disabled={isCreatingUser || !newUser.email || !newUser.username || !newUser.password}
+                                disabled={isCreatingUser || !newUser.email || !newUser.username || newUser.password.length < 12}
                             >
                                 {isCreatingUser ? (
                                     <div className="flex items-center gap-2">

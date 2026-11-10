@@ -13,6 +13,8 @@ import {
 import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
 import { bindBodyUserIdToCaller, requireRecordOwner, requireSelfOrAdmin } from '../middleware/ownership.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { userExerciseBody } from '../validators/trackingSchemas.js';
 
 const router = Router();
 
@@ -35,10 +37,10 @@ router.get('/user/:userId/purpose/:purpose', requireSelfOrAdmin(), getUserExerci
 router.get('/exercise/:exerciseId/users', authorize(['admin']), getUsersByExerciseId);
 
 // POST /api/user-exercises/assign - Assign exercise to the caller
-router.post('/assign', bindBodyUserIdToCaller, assignExerciseToUser);
+router.post('/assign', bindBodyUserIdToCaller, validateBody(userExerciseBody), assignExerciseToUser);
 
 // PUT /api/user-exercises/:id - Update user exercise assignment (can move it between users)
-router.put('/:id', authorize(['admin']), updateUserExercise);
+router.put('/:id', authorize(['admin']), validateBody(userExerciseBody), updateUserExercise);
 
 // DELETE /api/user-exercises/:id - Remove user exercise assignment
 router.delete('/:id', requireRecordOwner('userExercise'), removeUserExercise);

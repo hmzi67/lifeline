@@ -16,7 +16,6 @@ jest.mock('@prisma/client', () => ({
   PrismaClient: jest.fn(() => mockPrisma),
 }));
 
-const jwt = require('jsonwebtoken') as typeof import('jsonwebtoken');
 const { cheatDayEligibility } = require('../src/services/cheatDayEligibility') as typeof import('../src/services/cheatDayEligibility');
 const { ageOn, getUserQuestionnaire, updateDateOfBirth } = require('../src/controllers/questionnaireController') as typeof import('../src/controllers/questionnaireController');
 const { exportOwnData, updateOwnProfile } = require('../src/controllers/userController') as typeof import('../src/controllers/userController');
@@ -66,11 +65,10 @@ describe('age rule', () => {
   });
 
   it('rejects a date of birth outside 18-75 with a readable message', async () => {
-    const token = jwt.sign({ userId: 'u1', email: 'a@example.test' }, process.env.JWT_SECRET!);
     const tooYoung = new Date();
     tooYoung.setUTCFullYear(tooYoung.getUTCFullYear() - 15);
     const res = createResponse();
-    await updateDateOfBirth({ headers: { authorization: `Bearer ${token}` }, body: { dateOfBirth: tooYoung.toISOString() } } as any, res);
+    await updateDateOfBirth({ user: { id: 'u1' }, body: { dateOfBirth: tooYoung.toISOString() } } as any, res);
     expect(res.statusCode).toBe(400);
     expect(res.body.message).toBe('Age must be between 18 and 75 years');
   });
@@ -78,10 +76,9 @@ describe('age rule', () => {
 
 describe('questionnaire for a new user', () => {
   it('returns 200 with an empty questionnaire instead of a 404', async () => {
-    const token = jwt.sign({ userId: 'u1', email: 'a@example.test' }, process.env.JWT_SECRET!);
     mockPrisma.questionnaire.findFirst.mockResolvedValueOnce(null);
     const res = createResponse();
-    await getUserQuestionnaire({ headers: { authorization: `Bearer ${token}` } } as any, res);
+    await getUserQuestionnaire({ user: { id: 'u1' } } as any, res);
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ success: true, data: { questionnaire: null } });
   });

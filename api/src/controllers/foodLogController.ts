@@ -49,7 +49,7 @@ export const createFoodLog = async (req: Request, res: Response) => {
 
   const parsed = foodLogSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ success: false, message: parsed.error.errors[0]?.message ?? 'Invalid food log' });
+    return res.status(400).json({ success: false, message: parsed.error.issues[0]?.message ?? 'Invalid food log' });
   }
 
   try {

@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { authService } from '@/services/authService';
+import { setAccessToken } from '@/lib/axios';
 import type { LoginCredentials, AuthUserData } from '@/services/authService';
 
 type AuthStore = {
   user: AuthUserData | null;
-  token: string | null;
   isAuthenticated: boolean;
   loading: boolean;
   error: string | null;
@@ -18,7 +18,6 @@ export const useAuthStore = create<AuthStore>()(
   persist(
     (set) => ({
       user: null,
-      token: null,
       isAuthenticated: false,
       loading: false,
       error: null,
@@ -42,10 +41,10 @@ export const useAuthStore = create<AuthStore>()(
               return;
             }
 
-            localStorage.setItem('token', accessToken);
+            // Memory only; the persisted store below never sees the token.
+            setAccessToken(accessToken);
             set({
               user,
-              token: accessToken,
               isAuthenticated: true,
               loading: false,
               error: null,
@@ -67,10 +66,9 @@ export const useAuthStore = create<AuthStore>()(
         } catch {
           // Clear local state even if API call fails
         } finally {
-          localStorage.removeItem('token');
+          setAccessToken(null);
           set({
             user: null,
-            token: null,
             isAuthenticated: false,
             loading: false,
             error: null,
@@ -84,7 +82,6 @@ export const useAuthStore = create<AuthStore>()(
       name: 'admin-auth-store',
       partialize: (state) => ({
         user: state.user,
-        token: state.token,
         isAuthenticated: state.isAuthenticated,
       }),
     }

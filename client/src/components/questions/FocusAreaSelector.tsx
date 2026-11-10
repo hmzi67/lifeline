@@ -50,7 +50,7 @@ export const FocusAreaSelector: React.FC<FocusAreaSelectorProps> = ({ gender, on
         const fetchFocusAreas = async () => {
             setLoading(true);
             try {
-                const res = await api.get('/questionnaire/body-focus');
+                const res = await api.get('/questionnaire/body-focus-area');
                 const data = res?.data?.data?.bodyFocusArea;
 
                 // Normalize data: can be array or string

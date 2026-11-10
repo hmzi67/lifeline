@@ -14,7 +14,6 @@ const IMAGE_MIME_TYPES = new Set([
   'image/png',
   'image/webp',
   'image/gif',
-  'image/svg+xml',
   'image/avif',
 ]);
 
@@ -45,7 +44,6 @@ const MIME_EXTENSION_MAP: Record<string, string> = {
   'image/png': '.png',
   'image/webp': '.webp',
   'image/gif': '.gif',
-  'image/svg+xml': '.svg',
   'image/avif': '.avif',
   'audio/mpeg': '.mp3',
   'audio/mp3': '.mp3',
@@ -68,8 +66,9 @@ const MIME_EXTENSION_MAP: Record<string, string> = {
 const uploadRootPath = path.resolve(process.cwd(), config.upload.path);
 
 // Files stored before names were derived from the MIME type kept the client's
-// extension, so common media aliases stay servable.
-const LEGACY_MEDIA_EXTENSIONS = ['.jpeg', '.jfif', '.heic', '.heif', '.oga', '.opus', '.weba', '.m4v', '.mpg'];
+// extension, so common media aliases stay servable. SVG uploads are no longer
+// accepted (SVG can carry script); ones already stored stay viewable.
+const LEGACY_MEDIA_EXTENSIONS = ['.jpeg', '.jfif', '.heic', '.heif', '.oga', '.opus', '.weba', '.m4v', '.mpg', '.svg'];
 const SERVABLE_EXTENSIONS = new Set([...Object.values(MIME_EXTENSION_MAP), ...LEGACY_MEDIA_EXTENSIONS]);
 
 // Uploaded files are user content on the API's origin: they must never be
@@ -95,6 +94,9 @@ export const serveUploads = (): RequestHandler[] => [
     setHeaders: (res) => {
       res.setHeader('Content-Security-Policy', UPLOAD_RESPONSE_CSP);
       res.setHeader('X-Content-Type-Options', 'nosniff');
+      // Opening an upload directly downloads it instead of rendering it on our origin;
+      // <img>, <video> and the app's media players ignore this header.
+      res.setHeader('Content-Disposition', 'attachment');
     },
   }),
 ];
@@ -135,8 +137,6 @@ const CONTENT_SIGNATURES: Record<string, (bytes: Buffer) => boolean> = {
   'image/gif': (b) => ascii(b, 0, 'GIF87a') || ascii(b, 0, 'GIF89a'),
   'image/webp': (b) => riff(b, 'WEBP'),
   'image/avif': isoMedia,
-  // Text format: served with a sandboxing CSP, so only check it is an SVG document.
-  'image/svg+xml': (b) => /<svg[\s>]/i.test(b.toString('utf8')),
   'audio/mpeg': (b) => ascii(b, 0, 'ID3') || (b[0] === 0xff && (b[1] & 0xe0) === 0xe0),
   'audio/wav': (b) => riff(b, 'WAVE'),
   'audio/ogg': (b) => ascii(b, 0, 'OggS'),
@@ -246,6 +246,12 @@ const storage: multer.StorageEngine = {
   },
 };
 
+const MB = 1024 * 1024;
+/** Admin content: meditation audio and exercise/meditation video. */
+export const MEDIA_UPLOAD_MAX_BYTES = 100 * MB;
+/** User photos: avatar, medication and meal pictures. */
+export const IMAGE_UPLOAD_MAX_BYTES = 10 * MB;
+
 const fileFilter: multer.Options['fileFilter'] = (_req, file, callback) => {
   if (!getMediaCategory(file.mimetype)) {
     callback(new AppError('Only image, audio, and video files are allowed', 400, 'UNSUPPORTED_FILE_TYPE'));
@@ -255,11 +261,31 @@ const fileFilter: multer.Options['fileFilter'] = (_req, file, callback) => {
   callback(null, true);
 };
 
+const imageFileFilter: multer.Options['fileFilter'] = (_req, file, callback) => {
+  if (getMediaCategory(file.mimetype) !== 'image') {
+    callback(new AppError('Only image files are allowed', 400, 'UNSUPPORTED_FILE_TYPE'));
+    return;
+  }
+
+  callback(null, true);
+};
+
+/** Any allowed image, audio or video file. For admin content uploads. */
 export const mediaUpload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 200 * 1024 * 1024,
+    fileSize: MEDIA_UPLOAD_MAX_BYTES,
+    files: 1,
+  },
+});
+
+/** Images only, with a photo-sized limit. For uploads by regular users. */
+export const imageUpload = multer({
+  storage,
+  fileFilter: imageFileFilter,
+  limits: {
+    fileSize: IMAGE_UPLOAD_MAX_BYTES,
     files: 1,
   },
 });

@@ -1,10 +1,10 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 import { CouponError, findUsableCoupon } from '../services/couponService.js';
-
-const prisma = new PrismaClient();
+import { partialWithoutDefaults } from '../utils/partialWithoutDefaults.js';
+import { pageSize } from '../utils/pagination.js';
 
 // ─── Validation Schemas ────────────────────────────────────────────────────────
 
@@ -27,7 +27,7 @@ const createCouponSchema = z.object({
   expiresAt: z.string().datetime().optional().nullable(),
 });
 
-const updateCouponSchema = createCouponSchema.partial().omit({ code: true });
+const updateCouponSchema = partialWithoutDefaults(createCouponSchema).omit({ code: true });
 
 const validateCouponSchema = z.object({
   code: z.string().min(1, 'Coupon code is required'),
@@ -72,7 +72,7 @@ export const createCoupon = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ success: false, message: 'Validation error', errors: error.errors });
+      return res.status(400).json({ success: false, message: 'Validation error', errors: error.issues });
     }
     console.error('createCoupon error:', error);
     return res.status(500).json({ success: false, message: 'Failed to create coupon', error: error.message });
@@ -83,7 +83,8 @@ export const createCoupon = async (req: Request, res: Response) => {
 
 export const getAllCoupons = async (req: Request, res: Response) => {
   try {
-    const { page = '1', limit = '20', search, isActive } = req.query;
+    const { page = '1', limit: rawLimit, search, isActive } = req.query;
+    const limit = pageSize(rawLimit, 20);
     const skip = (Number(page) - 1) * Number(limit);
 
     const where: any = {};
@@ -171,7 +172,7 @@ export const updateCoupon = async (req: Request, res: Response) => {
     return res.status(200).json({ success: true, data: coupon, message: 'Coupon updated successfully' });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ success: false, message: 'Validation error', errors: error.errors });
+      return res.status(400).json({ success: false, message: 'Validation error', errors: error.issues });
     }
     console.error('updateCoupon error:', error);
     return res.status(500).json({ success: false, message: 'Failed to update coupon', error: error.message });
@@ -224,13 +225,13 @@ export const validateCoupon = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ success: false, message: 'Validation error', errors: error.errors });
+      return res.status(400).json({ success: false, message: 'Validation error', errors: error.issues });
     }
     if (error instanceof CouponError) {
       return res.status(error.statusCode).json({ success: false, message: error.message });
     }
     console.error('validateCoupon error:', error);
-    return res.status(500).json({ success: false, message: 'Failed to validate coupon', error: error.message });
+    return res.status(500).json({ success: false, message: 'Failed to validate coupon' });
   }
 };
 

@@ -2,6 +2,8 @@ import { Request, Response, Router } from 'express';
 import { prisma } from '../config/database.js';
 import authenticate from '../middleware/authenticate.js';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { weightLogBody } from '../validators/trackingSchemas.js';
 
 const router = Router();
 
@@ -31,7 +33,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // POST /api/weight-logs { date: 'YYYY-MM-DD', weight } - A weigh-in (kg) added for a missed local day.
 // Today's reading is saved with the questionnaire weight, which also updates the current weight.
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', validateBody(weightLogBody), async (req: Request, res: Response) => {
   const userId = (req as AuthenticatedRequest).user?.id;
   if (!userId) return res.status(401).json({ success: false, message: 'Authentication required' });
 

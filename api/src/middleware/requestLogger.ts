@@ -44,7 +44,8 @@ const requestLogger = (req: Request, res: Response, next: NextFunction) => {
 
         const logData = {
             method: req.method,
-            url: req.url,
+            // Path only: query strings can carry tokens, codes or emails, even in development.
+            path: req.path,
             statusCode: res.statusCode,
             duration: `${duration}ms`,
             userAgent: req.get('User-Agent'),

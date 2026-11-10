@@ -8,6 +8,8 @@ import {
 } from '../controllers/exerciseDetailController.js';
 import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { exerciseDetailBody } from '../validators/contentSchemas.js';
 
 const router = Router();
 
@@ -18,10 +20,10 @@ router.get('/exercise/:exerciseId', getExerciseDetails);
 router.get('/:id', getExerciseDetailById);
 
 // POST /api/exercise-details - Create exercise detail
-router.post('/', authenticate, authorize(['admin']), createExerciseDetail);
+router.post('/', authenticate, authorize(['admin']), validateBody(exerciseDetailBody), createExerciseDetail);
 
 // PUT /api/exercise-details/:id - Update exercise detail
-router.put('/:id', authenticate, authorize(['admin']), updateExerciseDetail);
+router.put('/:id', authenticate, authorize(['admin']), validateBody(exerciseDetailBody), updateExerciseDetail);
 
 // DELETE /api/exercise-details/:id - Delete exercise detail
 router.delete('/:id', authenticate, authorize(['admin']), deleteExerciseDetail);

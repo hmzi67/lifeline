@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import bcrypt from 'bcryptjs';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
@@ -9,8 +9,7 @@ import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 import { isSuspended } from '../utils/accountAccess.js';
 import { generateTokens } from './authController.js';
 import { isValidTimeZone } from '../services/missedActivityReminders.js';
-
-const prisma = new PrismaClient();
+import { PASSWORD_MIN_LENGTH, PASSWORD_TOO_SHORT } from '../utils/passwordPolicy.js';
 
 const USER_SETTINGS_DEFAULTS = {
   theme: 'system',
@@ -571,6 +570,9 @@ export const updateUser = async (req: Request, res: Response) => {
 
     // Hash password if provided
     if (data.password) {
+      if (String(data.password).length < PASSWORD_MIN_LENGTH) {
+        return res.status(400).json({ success: false, message: PASSWORD_TOO_SHORT });
+      }
       data.password = await bcrypt.hash(data.password, 12);
     }
 
@@ -689,10 +691,10 @@ export const updateOwnProfile = async (req: Request, res: Response) => {
       currentPassword?: unknown;
     };
     if (typeof newPassword === 'string' && newPassword !== '') {
-      if (newPassword.length < 8) {
+      if (newPassword.length < PASSWORD_MIN_LENGTH) {
         return res.status(400).json({
           success: false,
-          message: 'Password must be at least 8 characters long',
+          message: PASSWORD_TOO_SHORT,
         });
       }
 
@@ -777,6 +779,9 @@ export const createUser = async (req: Request, res: Response) => {
 
     // Hash password if provided
     if (data.password) {
+      if (String(data.password).length < PASSWORD_MIN_LENGTH) {
+        return res.status(400).json({ success: false, message: PASSWORD_TOO_SHORT });
+      }
       data.password = await bcrypt.hash(data.password, 12);
     }
 

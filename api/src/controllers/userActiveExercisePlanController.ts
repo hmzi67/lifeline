@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
-
-const prisma = new PrismaClient();
 
 // Get user's active exercise plan
 export const getUserActiveExercisePlan = async (req: Request, res: Response): Promise<void> => {

@@ -1,6 +1,8 @@
 import express, { NextFunction, Request, Response, Router } from "express";
 import waterIntakeController from "../controllers/waterIntakeController.js";
 import authenticate from "../middleware/authenticate.js";
+import { validateBody } from '../middleware/validateRequest.js';
+import { waterIntakeBody } from '../validators/trackingSchemas.js';
 
 const waterIntakeRoutes: Router = express.Router();
 
@@ -81,7 +83,7 @@ const validateDateFormat = (
 };
 
 // Create new water intake log
-waterIntakeRoutes.post("/", authenticate, validateTimeFormat, validateDateFormat, waterIntakeController.createWaterIntake);
+waterIntakeRoutes.post("/", authenticate, validateTimeFormat, validateDateFormat, validateBody(waterIntakeBody), waterIntakeController.createWaterIntake);
 
 // Get all water intake logs (with optional filtering)
 waterIntakeRoutes.get("/", authenticate, waterIntakeController.getAllWaterIntakes);
@@ -93,7 +95,7 @@ waterIntakeRoutes.get("/user/:userId", authenticate, waterIntakeController.getWa
 waterIntakeRoutes.get("/:id", authenticate, waterIntakeController.getWaterIntakeById);
 
 // Update water intake log
-waterIntakeRoutes.put("/:id", authenticate, validateTimeFormat, validateDateFormat, waterIntakeController.updateWaterIntake);
+waterIntakeRoutes.put("/:id", authenticate, validateTimeFormat, validateDateFormat, validateBody(waterIntakeBody), waterIntakeController.updateWaterIntake);
 
 // Delete water intake log
 waterIntakeRoutes.delete("/:id", authenticate, waterIntakeController.deleteWaterIntake);

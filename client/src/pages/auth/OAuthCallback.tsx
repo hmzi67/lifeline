@@ -28,7 +28,7 @@ const OAuthCallback: React.FC = () => {
                 const accessToken = exchange.data?.data?.accessToken;
                 if (!accessToken) throw new Error('No access token in exchange response');
 
-                // Sync the access token into AuthContext (also persists to localStorage)
+                // Sync the access token into AuthContext (held in memory only)
                 setToken(accessToken);
             } catch (err) {
                 console.error(err);

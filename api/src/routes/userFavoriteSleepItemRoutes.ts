@@ -5,6 +5,8 @@ import {
     removeFavoriteSleepItem,
 } from '../controllers/userFavoriteSleepItemController.js';
 import authenticate from '../middleware/authenticate.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { favoriteSleepItemBody } from '../validators/trackingSchemas.js';
 
 const router = Router();
 
@@ -15,7 +17,7 @@ router.use(authenticate);
 router.get('/', getFavoriteSleepItems);
 
 // POST /api/favorite-sleep - Add a sleep sound or story to favourites
-router.post('/', addFavoriteSleepItem);
+router.post('/', validateBody(favoriteSleepItemBody), addFavoriteSleepItem);
 
 // DELETE /api/favorite-sleep/:type/:itemId - Remove a sleep sound or story from favourites
 router.delete('/:type/:itemId', removeFavoriteSleepItem);

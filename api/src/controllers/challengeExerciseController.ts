@@ -1,9 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { AppError, handleError, sendResponse } from '../utils/responseHandler.js';
-
-const prisma = new PrismaClient();
 
 // ---- Validation Schemas ----
 const challengeExerciseSchema = z.object({
@@ -45,6 +43,8 @@ export const getAllChallengeExercises = async (
 ): Promise<void> => {
   try {
     const challengeExercises = await prisma.challengeExercise.findMany({
+      // shortcut: the reply is a bare array with no room for a cursor, so it reads at most 500 rows; page it in the database if the catalog outgrows that.
+      take: 500,
       ...challengeExerciseInclude,
     });
 

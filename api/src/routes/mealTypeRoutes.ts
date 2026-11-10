@@ -8,6 +8,8 @@ import {
 } from '../controllers/mealTypeController.js';
 import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { mealTypeBody } from '../validators/contentSchemas.js';
 
 const router = Router();
 
@@ -18,10 +20,10 @@ router.get('/', getAllMealTypes);
 router.get('/:id', getMealTypeById);
 
 // POST /api/meal-types - Create new meal type
-router.post('/', authenticate, authorize(['admin']), createMealType);
+router.post('/', authenticate, authorize(['admin']), validateBody(mealTypeBody), createMealType);
 
 // PUT /api/meal-types/:id - Update meal type
-router.put('/:id', authenticate, authorize(['admin']), updateMealType);
+router.put('/:id', authenticate, authorize(['admin']), validateBody(mealTypeBody), updateMealType);
 
 // DELETE /api/meal-types/:id - Delete meal type
 router.delete('/:id', authenticate, authorize(['admin']), deleteMealType);

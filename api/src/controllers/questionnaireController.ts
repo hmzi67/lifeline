@@ -1,8 +1,7 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { z } from 'zod';
-import jwt from 'jsonwebtoken';
-import { config } from '../config/index.js';
+import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 
 interface AuthRequest extends Request {
   user?: {
@@ -11,14 +10,6 @@ interface AuthRequest extends Request {
     roleId?: string;
   };
 }
-
-interface JWTPayload {
-  userId: string;
-  email: string;
-  roleId?: string;
-}
-
-const prisma = new PrismaClient();
 
 // Validation schemas with arrays for multi-value fields
 // Same rule as the app's onboarding: users must be 18 to 75 years old.
@@ -99,28 +90,16 @@ type DBField = Exclude<FieldSchemaKey, VirtualField>;
 // Use DBField for Prisma queries (only real DB columns)
 type QuestionnaireField = DBField;
 
-const getUserFromToken = (
-  req: Request
-): { userId: string; email: string; roleId?: string } | null => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  const token = authHeader.substring(7);
-
-  try {
-    const decoded = jwt.verify(token, config.jwt.secret) as JWTPayload;
-    return { userId: decoded.userId, email: decoded.email, roleId: decoded.roleId };
-  } catch {
-    return null;
-  }
-};
+// Set by the authenticate middleware on every questionnaire route.
+const authUserId = (req: Request) => (req as AuthenticatedRequest).user?.id;
 
 const handleError = (res: Response, error: any, operation: string) => {
   if (error instanceof z.ZodError) {
     return res.status(400).json({
       success: false,
       // The app shows `message`, so lead with the actual reason.
-      message: error.errors[0]?.message || 'Validation error',
-      errors: error.errors.map(err => ({
+      message: error.issues[0]?.message || 'Validation error',
+      errors: error.issues.map(err => ({
         field: err.path.join('.'),
         message: err.message,
       })),
@@ -177,11 +156,11 @@ const getQuestionnaireField = async (
   fieldName: QuestionnaireField
 ) => {
   try {
-    const user = getUserFromToken(req);
-    if (!user) return res.status(401).json({ success: false, message: 'Unauthorized access' });
+    const userId = authUserId(req);
+    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized access' });
 
     const questionnaire = await prisma.questionnaire.findFirst({
-      where: { userId: user.userId },
+      where: { userId: userId },
       select: { [fieldName]: true },
     });
 
@@ -202,8 +181,8 @@ const getQuestionnaireFields = async (
   responseKey: string
 ) => {
   try {
-    const user = getUserFromToken(req);
-    if (!user) return res.status(401).json({ success: false, message: 'Unauthorized access' });
+    const userId = authUserId(req);
+    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized access' });
 
     const selectObject = fieldNames.reduce(
       (acc, fieldName) => {
@@ -214,7 +193,7 @@ const getQuestionnaireFields = async (
     );
 
     const questionnaire = await prisma.questionnaire.findFirst({
-      where: { userId: user.userId },
+      where: { userId: userId },
       select: selectObject,
     });
 
@@ -241,8 +220,8 @@ const updateQuestionnaireField = async (
   fieldName: QuestionnaireField
 ) => {
   try {
-    const user = getUserFromToken(req);
-    if (!user) return res.status(401).json({ success: false, message: 'Unauthorized access' });
+    const userId = authUserId(req);
+    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized access' });
 
     const schema = fieldSchemas[fieldName];
     if (!schema) return res.status(400).json({ success: false, message: 'Invalid field name' });
@@ -256,7 +235,7 @@ const updateQuestionnaireField = async (
       );
     }
 
-    const questionnaire = await upsertQuestionnaire(user.userId, validatedData);
+    const questionnaire = await upsertQuestionnaire(userId, validatedData);
 
     return res.status(200).json({
       success: true,
@@ -277,14 +256,14 @@ const updateQuestionnaireFields = async (
   responseKey: string
 ) => {
   try {
-    const user = getUserFromToken(req);
-    if (!user) return res.status(401).json({ success: false, message: 'Unauthorized access' });
+    const userId = authUserId(req);
+    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized access' });
 
     const schema = fieldSchemas[schemaKey];
     if (!schema) return res.status(400).json({ success: false, message: 'Invalid schema' });
 
     const validatedData = schema.parse(req.body);
-    const questionnaire = await upsertQuestionnaire(user.userId, validatedData);
+    const questionnaire = await upsertQuestionnaire(userId, validatedData);
 
     const responseData = fieldNames.reduce(
       (acc, fieldName) => {
@@ -307,10 +286,10 @@ const updateQuestionnaireFields = async (
 // Main CRUD Controllers
 export const getUserQuestionnaire = async (req: Request, res: Response) => {
   try {
-    const user = getUserFromToken(req);
-    if (!user) return res.status(401).json({ success: false, message: 'Unauthorized access' });
+    const userId = authUserId(req);
+    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized access' });
 
-    const questionnaire = await prisma.questionnaire.findFirst({ where: { userId: user.userId } });
+    const questionnaire = await prisma.questionnaire.findFirst({ where: { userId: userId } });
 
     // A new user has not answered anything yet; that is a normal state, not a 404.
     return res.status(200).json({ success: true, data: { questionnaire: questionnaire ?? null } });
@@ -321,11 +300,11 @@ export const getUserQuestionnaire = async (req: Request, res: Response) => {
 
 export const createOrUpdateQuestionnaire = async (req: Request, res: Response) => {
   try {
-    const user = getUserFromToken(req);
-    if (!user) return res.status(401).json({ success: false, message: 'Unauthorized access' });
+    const userId = authUserId(req);
+    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized access' });
 
     const validatedData = questionnaireSchema.parse(req.body);
-    const questionnaire = await upsertQuestionnaire(user.userId, validatedData);
+    const questionnaire = await upsertQuestionnaire(userId, validatedData);
 
     return res.status(200).json({
       success: true,
@@ -339,10 +318,10 @@ export const createOrUpdateQuestionnaire = async (req: Request, res: Response) =
 
 export const deleteQuestionnaire = async (req: Request, res: Response) => {
   try {
-    const user = getUserFromToken(req);
-    if (!user) return res.status(401).json({ success: false, message: 'Unauthorized access' });
+    const userId = authUserId(req);
+    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized access' });
 
-    const deleted = await prisma.questionnaire.deleteMany({ where: { userId: user.userId } });
+    const deleted = await prisma.questionnaire.deleteMany({ where: { userId: userId } });
 
     if (deleted.count === 0)
       return res.status(404).json({ success: false, message: 'Questionnaire not found' });

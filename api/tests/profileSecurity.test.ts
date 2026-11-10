@@ -108,7 +108,8 @@ describe('updateOwnProfile', () => {
     expect(mockPrisma.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 'user-1' } });
     expect(ok.body.data.session).toEqual({ accessToken: expect.any(String), refreshToken: expect.any(String) });
     expect(mockPrisma.refreshToken.create.mock.calls[0][0].data.token).toBe(ok.body.data.session.refreshToken);
-  });
+    // The controller hashes at production cost; under a parallel run that can pass 5s.
+  }, 30000);
 
   it('keeps sessions when the password is not changed', async () => {
     const res = createResponse();

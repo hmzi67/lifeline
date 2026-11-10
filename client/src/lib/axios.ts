@@ -22,14 +22,24 @@ const isPublicRoute = (url: string): boolean => {
   return PUBLIC_ROUTES.some(route => url?.includes(route));
 };
 
-// Request interceptor: Add access token from localStorage
+// The access token is kept in memory only, out of reach of anything reading storage.
+// After a reload it is restored from the HttpOnly refresh cookie (refreshAccessToken).
+let accessToken: string | null = null;
+// Earlier versions persisted the token; drop any copy left in the browser.
+localStorage.removeItem('token');
+
+export const getAccessToken = () => accessToken;
+export const setAccessToken = (token: string | null) => {
+  accessToken = token;
+};
+
+// Request interceptor: attach the in-memory access token
 api.interceptors.request.use(
   (config) => {
     // Always send the token when we have one: public GETs ignore it, but
     // authenticated writes under a public prefix (e.g. POST /blogs/:id/comments) need it.
-    const token = localStorage.getItem("token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    if (accessToken) {
+      config.headers.Authorization = `Bearer ${accessToken}`;
     }
     return config;
   },
@@ -40,8 +50,29 @@ api.interceptors.request.use(
 // only issue one /auth/refresh-token call and let the rest await it.
 let refreshPromise: Promise<string> | null = null;
 
+/** Gets a new access token from the refresh cookie; rejects when there is no valid session. */
+export const refreshAccessToken = (): Promise<string> => {
+  if (!refreshPromise) {
+    refreshPromise = api
+      .post('/auth/refresh-token')
+      .then((res) => {
+        // Backend returns: { success: true, data: { accessToken: "..." } }
+        const newAccessToken = res.data?.data?.accessToken;
+        if (!newAccessToken) {
+          throw new Error('Invalid token refresh response from server.');
+        }
+        accessToken = newAccessToken;
+        return newAccessToken as string;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+};
+
 const redirectToLogin = () => {
-  localStorage.removeItem('token');
+  accessToken = null;
   if (window.location.pathname !== '/login') {
     window.location.href = '/login';
   }
@@ -68,26 +99,7 @@ api.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        if (!refreshPromise) {
-          // Call your refresh endpoint mapping correctly to backend
-          refreshPromise = api
-            .post('/auth/refresh-token')
-            .then((res) => {
-              // Backend returns: { success: true, data: { accessToken: "..." } }
-              const newAccessToken = res.data?.data?.accessToken;
-              if (!newAccessToken) {
-                throw new Error('Invalid token refresh response from server.');
-              }
-              // Save new access token using the uniform "token" key
-              localStorage.setItem('token', newAccessToken);
-              return newAccessToken as string;
-            })
-            .finally(() => {
-              refreshPromise = null;
-            });
-        }
-
-        const newAccessToken = await refreshPromise;
+        const newAccessToken = await refreshAccessToken();
 
         // Update Authorization header and retry original request
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;

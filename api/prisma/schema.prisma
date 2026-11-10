@@ -45,6 +45,11 @@ model User {
   otpPurpose           String?   @map("otp_purpose") @db.VarChar(20)
   otpExpiresAt         DateTime? @map("otp_expires_at")
   otpAttempts          Int       @default(0) @map("otp_attempts")
+  // Per-account password reset budget for a rolling 24h window (see passwordResetBudget.ts).
+  passwordResetWindowStart DateTime? @map("password_reset_window_start")
+  passwordResetSentCount   Int       @default(0) @map("password_reset_sent_count")
+  passwordResetLastSentAt  DateTime? @map("password_reset_last_sent_at")
+  passwordResetFailedCount Int       @default(0) @map("password_reset_failed_count")
   status               String?   @db.VarChar(20)
   trialUsedAt          DateTime? @map("trial_used_at")
   roleId               String?   @map("role_id")
@@ -108,6 +113,8 @@ model AuthToken {
   expiresAt    DateTime? @map("expires_at")
   user         User?     @relation(fields: [userId], references: [id])
 
+  @@index([userId])
+
   @@map("auth_tokens")
 }
 
@@ -124,6 +131,7 @@ model RefreshToken {
   user         User     @relation(fields: [userId], references: [id])
 
   @@index([replacedById])
+  @@index([userId])
   @@map("refresh_tokens")
 }
 
@@ -141,6 +149,7 @@ model OauthLoginCode {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([expiresAt])
+  @@index([userId])
   @@map("oauth_login_codes")
 }
 
@@ -220,6 +229,9 @@ model SubscriptionPayment {
   @@index([pricingPlanId])
   @@index([stripeSubscriptionId])
   @@index([stripeCustomerId])
+  @@index([userId])
+  @@index([stripePaymentIntentId])
+  @@index([stripeSetupIntentId])
   @@map("subscription_payments")
 }
 
@@ -233,6 +245,9 @@ model UserLicense {
   expiresAt              DateTime?            @map("expires_at")
   user                   User?                @relation(fields: [userId], references: [id])
   payment                SubscriptionPayment? @relation(fields: [paymentId], references: [id])
+
+  @@index([userId])
+  @@index([paymentId])
 
   @@map("user_licenses")
 }
@@ -262,6 +277,8 @@ model Questionnaire {
   goalWeight          Float?    @map("goal_weight")
   motivationFor       String?   @map("motivation_for") @db.Text
   user                User?     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 
   @@map("questionnaires")
 }
@@ -299,6 +316,8 @@ model UserDietPlan {
   user      User?     @relation(fields: [userId], references: [id])
   diet      DietPlan? @relation(fields: [dietId], references: [id])
 
+  @@index([userId])
+
   @@map("user_diet_plans")
 }
 
@@ -310,6 +329,8 @@ model DietPlanDay {
   notes         String?        @db.Text
   diet          DietPlan       @relation(fields: [dietId], references: [id])
   dietPlanMeals DietPlanMeal[]
+
+  @@index([dietId])
 
   @@map("diet_plan_days")
 }
@@ -340,6 +361,8 @@ model DietPlanMeal {
   day          DietPlanDay   @relation(fields: [dayId], references: [id])
   mealType     MealType      @relation(fields: [mealTypeId], references: [id])
   dietMealLogs DietMealLog[]
+
+  @@index([dayId])
 
   @@map("diet_plan_meals")
 }
@@ -418,6 +441,8 @@ model UserExercise {
   user       User?     @relation(fields: [userId], references: [id])
   exercise   Exercise? @relation(fields: [exerciseId], references: [id])
 
+  @@index([userId])
+
   @@map("user_exercises")
 }
 
@@ -444,6 +469,8 @@ model ExercisePlanWeek {
   plan                 ExercisePlan           @relation(fields: [planId], references: [id])
   exercisePlanSchedule ExercisePlanSchedule[]
 
+  @@index([planId])
+
   @@map("exercise_plan_weeks")
 }
 
@@ -462,6 +489,8 @@ model ExercisePlanSchedule {
   exercise             Exercise               @relation(fields: [exerciseId], references: [id])
   userExerciseProgress UserExerciseProgress[]
 
+  @@index([weekId])
+
   @@map("exercise_plan_schedule")
 }
 
@@ -475,6 +504,8 @@ model UserActiveExercisePlan {
   pausedAt    DateTime?    @map("paused_at")
   user        User         @relation(fields: [userId], references: [id])
   plan        ExercisePlan @relation(fields: [planId], references: [id])
+
+  @@index([userId])
 
   @@map("user_active_exercise_plan")
 }
@@ -491,6 +522,8 @@ model ExerciseDetail {
   instructions String?  @db.Text
   exercise     Exercise @relation(fields: [exerciseId], references: [id])
 
+  @@index([exerciseId])
+
   @@map("exercise_details")
 }
 
@@ -505,6 +538,8 @@ model UserExerciseProgress {
   completedAt        DateTime?            @map("completed_at")
   user               User                 @relation(fields: [userId], references: [id])
   exerciseSchedule   ExercisePlanSchedule @relation(fields: [exerciseScheduleId], references: [id])
+
+  @@index([userId])
 
   @@map("user_exercise_progress")
 }
@@ -537,6 +572,8 @@ model Challenge {
   challengeFees      ChallengeFee[]
   userChallenges     UserChallenge[]
   reports            ChallengeReport[]
+
+  @@index([submittedById])
 
   @@map("challenges")
 }
@@ -605,6 +642,9 @@ model ChallengeFee {
   challenge         Challenge?      @relation(fields: [challengeId], references: [id])
   userChallenges    UserChallenge[]
 
+  @@index([userId])
+  @@index([challengeId])
+
   @@map("challenge_fees")
 }
 
@@ -621,6 +661,9 @@ model UserChallenge {
   challenge   Challenge?    @relation(fields: [challengeId], references: [id])
   fee         ChallengeFee? @relation(fields: [feeId], references: [id])
   user        User?         @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([challengeId])
 
   @@map("user_challenges")
 }
@@ -665,6 +708,8 @@ model CheatDay {
   loggedAt    DateTime? @map("logged_at")
   user        User?     @relation(fields: [userId], references: [id])
 
+  @@index([userId])
+
   @@map("cheat_days")
 }
 
@@ -699,6 +744,8 @@ model SleepLog {
   user              User?              @relation(fields: [userId], references: [id])
   userDailyRoutines UserDailyRoutine[]
 
+  @@index([userId])
+
   @@map("sleep_logs")
 }
 
@@ -714,6 +761,8 @@ model UserWaterGoal {
   unit       String    @db.VarChar(10)
   updatedAt  DateTime? @map("updated_at")
   user       User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 
   @@map("user_water_goal")
 }
@@ -732,6 +781,8 @@ model WaterIntakeLog {
   notes             String?            @db.Text
   user              User?              @relation(fields: [userId], references: [id])
   userDailyRoutines UserDailyRoutine[]
+
+  @@index([userId])
 
   @@map("water_intake_logs")
 }
@@ -758,6 +809,8 @@ model Medication {
   medicationReminders MedicationReminder[]
   intakes             MedicationIntake[]
   userDailyRoutines   UserDailyRoutine[]
+
+  @@index([userId])
 
   @@map("medications")
 }
@@ -802,6 +855,9 @@ model MedicationReminder {
   enabled      Boolean    @default(true)
   medication   Medication @relation(fields: [medicationId], references: [id])
   user         User       @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([medicationId])
 
   @@map("medication_reminders")
 }
@@ -850,6 +906,8 @@ model MeditationSession {
   meditation              Meditation               @relation(fields: [meditationId], references: [id])
   userFavoriteMeditations UserFavoriteMeditation[]
 
+  @@index([meditationId])
+
   @@map("meditation_sessions")
 }
 
@@ -861,6 +919,8 @@ model UserFavoriteMeditation {
   favoritedAt DateTime          @map("favorited_at")
   user        User              @relation(fields: [userId], references: [id])
   session     MeditationSession @relation(fields: [sessionId], references: [id])
+
+  @@index([userId])
 
   @@map("user_favorite_meditations")
 }
@@ -899,6 +959,8 @@ model UserDailyRoutine {
   medication   Medication?     @relation(fields: [medicationId], references: [id])
   meditation   Meditation?     @relation(fields: [meditationId], references: [id])
   water        WaterIntakeLog? @relation(fields: [waterId], references: [id])
+
+  @@index([userId])
 
   @@map("user_daily_routine")
 }
@@ -1005,6 +1067,10 @@ model BlogComment {
   replies   BlogComment[] @relation("CommentReplies")
   createdAt DateTime      @default(now()) @map("created_at")
 
+  @@index([userId])
+  @@index([blogId])
+  @@index([parentId])
+
   @@map("blog_comments")
 }
 
@@ -1044,6 +1110,7 @@ model CouponUsage {
   user   User       @relation(fields: [userId], references: [id])
 
   @@unique([couponId, userId])
+  @@index([userId])
   @@map("coupon_usages")
 }
 
@@ -1079,6 +1146,7 @@ model ReferralUsage {
   user         User         @relation(fields: [userId], references: [id])
 
   @@unique([referralCodeId, userId])
+  @@index([userId])
   @@map("referral_usages")
 }
 
@@ -1121,4 +1189,13 @@ model Notification {
 
   @@index([userId, createdAt])
   @@map("notifications")
+}
+
+// Stripe event IDs already handled, so a redelivered webhook is applied once.
+model ProcessedStripeEvent {
+  id          String   @id @db.VarChar(255)
+  type        String   @db.VarChar(100)
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@map("processed_stripe_events")
 }

@@ -8,6 +8,8 @@ import {
 } from '../controllers/exercisePlanScheduleController.js';
 import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { exercisePlanScheduleBody } from '../validators/contentSchemas.js';
 
 const router = Router();
 
@@ -18,10 +20,10 @@ router.get('/week/:weekId', getExercisePlanSchedules);
 router.get('/:id', getExercisePlanScheduleById);
 
 // POST /api/exercise-plan-schedules - Create exercise plan schedule
-router.post('/', authenticate, authorize(['admin']), createExercisePlanSchedule);
+router.post('/', authenticate, authorize(['admin']), validateBody(exercisePlanScheduleBody), createExercisePlanSchedule);
 
 // PUT /api/exercise-plan-schedules/:id - Update exercise plan schedule
-router.put('/:id', authenticate, authorize(['admin']), updateExercisePlanSchedule);
+router.put('/:id', authenticate, authorize(['admin']), validateBody(exercisePlanScheduleBody), updateExercisePlanSchedule);
 
 // DELETE /api/exercise-plan-schedules/:id - Delete exercise plan schedule
 router.delete('/:id', authenticate, authorize(['admin']), deleteExercisePlanSchedule);

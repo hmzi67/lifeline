@@ -40,7 +40,7 @@ export const recordIntake = async (req: Request<{ id: string }>, res: Response) 
   if (!userId) return res.status(401).json({ success: false, message: 'Authentication required' });
   const parsed = intakeSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ success: false, message: parsed.error.errors[0]?.message ?? 'Invalid intake' });
+    return res.status(400).json({ success: false, message: parsed.error.issues[0]?.message ?? 'Invalid intake' });
   }
 
   try {

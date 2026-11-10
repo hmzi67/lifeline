@@ -58,7 +58,7 @@ npm run build:check        # tsc -b && vite build
 npm run lint
 ```
 
-Note: `admin` has no test script and `client`/`admin` builds differ in whether they type-check — use `type-check`/`build:check` explicitly when you need to verify types without a full asset build.
+Both `client` and `admin` run Vitest (`npm test`); component tests opt into jsdom with a `// @vitest-environment jsdom` first line. `client`/`admin` builds differ in whether they type-check — use `type-check`/`build:check` explicitly when you need to verify types without a full asset build.
 
 ## Architecture
 
@@ -74,11 +74,11 @@ Note: `admin` has no test script and `client`/`admin` builds differ in whether t
 ### Client (`client/`) and Admin (`admin/`)
 
 - Both are Vite + React + TypeScript + Tailwind + Zustand, with near-identical `src/` layout: `components/`, `pages/`, `services/`, `store/`, `lib/`, `config/`, `hooks/`, `types/`. `admin` is on React 18/Vite `^6`/Tailwind `^3`; `client` is on React 19. Treat them as siblings, not a shared package — a fix in one does not automatically apply to the other.
-- `lib/axios.ts` in each app is the single Axios instance all requests go through. It auto-attaches the bearer token from `localStorage['token']`, and on a 401 (except for a `PUBLIC_ROUTES` allowlist and the refresh endpoint itself) transparently calls `/auth/refresh-token`, retries the original request once, and hard-redirects to `/login` if refresh fails. New API calls should go through this instance rather than raw `axios` or `fetch`.
+- `lib/axios.ts` in each app is the single Axios instance all requests go through. It holds the access token in memory only (`setAccessToken`/`getAccessToken`) and attaches it as a bearer token; on a 401 (except for a `PUBLIC_ROUTES` allowlist and the refresh endpoint itself) transparently calls `/auth/refresh-token`, retries the original request once, and hard-redirects to `/login` if refresh fails. New API calls should go through this instance rather than raw `axios` or `fetch`.
 - `services/crudService.ts` provides a generic `CrudService<T>` class (getAll/getById/create/update/delete + customGet/customPost) — prefer extending/instantiating this for new resource services instead of hand-writing CRUD calls.
 - API base URL resolution (`config/index.ts`): `VITE_API_URL` env var, falling back to same-origin `/api` in production builds and `http://localhost:3000/api` in dev. Both frontends assume the API is mounted under `/api`.
 - Client routing (`client/src/App.tsx`) uses `react-router-dom` with route-level lazy loading (`lazy()` + `Suspense`) for every page except a few loaded eagerly for the auth flow. Route protection is handled by `components/routes/ProtectedRoutes.tsx` + `contexts/AuthContext`, not by per-page checks.
-- Auth state: `client` uses `contexts/AuthContext` + `store/useUserStore.ts` (Zustand); `admin` uses `store/useAuthStore.ts` + `store/useUserStore.ts`. Access token lives in `localStorage`, refresh token is an httpOnly cookie (hence `withCredentials: true` on the axios instance).
+- Auth state: `client` uses `contexts/AuthContext`; `admin` uses `store/useAuthStore.ts` + `store/useUserStore.ts`. The access token is never persisted: after a reload it is re-obtained from the httpOnly refresh-token cookie (hence `withCredentials: true` on the axios instance).
 
 ## Deployment
 

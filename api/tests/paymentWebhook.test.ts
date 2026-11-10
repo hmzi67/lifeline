@@ -15,7 +15,16 @@ const mockTransaction = {
   },
 };
 
+const processedEvents = new Set<string>();
 const mockPrisma = {
+  processedStripeEvent: {
+    createMany: jest.fn(async ({ data: [{ id }] }: any) => {
+      if (processedEvents.has(id)) return { count: 0 };
+      processedEvents.add(id);
+      return { count: 1 };
+    }),
+    deleteMany: jest.fn(async ({ where: { id } }: any) => ({ count: processedEvents.delete(id) ? 1 : 0 })),
+  },
   subscriptionPayment: {
     findFirst: jest.fn(),
     updateMany: jest.fn(),
@@ -65,6 +74,7 @@ const basePayment = {
 describe('Stripe webhook entitlement provisioning', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    processedEvents.clear();
     mockPrisma.$transaction.mockImplementation(async (operation: any) => operation(mockTransaction));
     mockPrisma.subscriptionPayment.findFirst.mockResolvedValue({ id: 'payment-one' });
     mockTransaction.subscriptionPayment.findUnique.mockResolvedValue(basePayment);
@@ -81,6 +91,7 @@ describe('Stripe webhook entitlement provisioning', () => {
 
   it('grants a license when an Apple Pay PaymentIntent succeeds', async () => {
     mockStripe.webhooks.constructEvent.mockReturnValue({
+      id: 'evt_pi_one',
       type: 'payment_intent.succeeded',
       data: {
         object: {
@@ -123,6 +134,7 @@ describe('Stripe webhook entitlement provisioning', () => {
       currentPeriodEnd: trialEndsAt,
     });
     mockStripe.webhooks.constructEvent.mockReturnValue({
+      id: 'evt_seti_one',
       type: 'setup_intent.succeeded',
       data: {
         object: {
@@ -152,6 +164,57 @@ describe('Stripe webhook entitlement provisioning', () => {
     });
     expect(mockTransaction.userLicense.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ expiresAt: trialEndsAt }),
+    });
+  });
+
+  describe('duplicate delivery', () => {
+    const deliver = async () => {
+      const response = createResponse();
+      await handleStripeWebhook(
+        { headers: { 'stripe-signature': 'signature' }, body: Buffer.from('event') } as any,
+        response,
+      );
+      return response;
+    };
+    const succeeded = { id: 'evt_dup', type: 'payment_intent.succeeded', data: { object: { id: 'pi_dup', payment_method: 'pm_apple' } } };
+
+    it('applies a redelivered event once', async () => {
+      mockStripe.webhooks.constructEvent.mockReturnValue(succeeded);
+
+      await deliver();
+      const second = await deliver();
+
+      expect(mockTransaction.userLicense.create).toHaveBeenCalledTimes(1);
+      expect(mockTransaction.subscriptionPayment.update).toHaveBeenCalledTimes(1);
+      expect(second.json).toHaveBeenCalledWith({ received: true, duplicate: true });
+    });
+
+    it('applies simultaneous deliveries of the same event once', async () => {
+      mockStripe.webhooks.constructEvent.mockReturnValue(succeeded);
+
+      await Promise.all([deliver(), deliver(), deliver()]);
+
+      expect(mockTransaction.userLicense.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets Stripe retry an event whose processing failed', async () => {
+      mockStripe.webhooks.constructEvent.mockReturnValue(succeeded);
+      mockPrisma.$transaction.mockRejectedValueOnce(new Error('db down'));
+
+      await expect(deliver()).rejects.toThrow('db down');
+      await deliver();
+
+      expect(mockTransaction.userLicense.create).toHaveBeenCalledTimes(1);
+      expect(processedEvents.has('evt_dup')).toBe(true);
+    });
+
+    it('records nothing when the signature is invalid', async () => {
+      mockStripe.webhooks.constructEvent.mockImplementationOnce(() => { throw new Error('bad signature'); });
+
+      const response = await deliver();
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(mockPrisma.processedStripeEvent.createMany).not.toHaveBeenCalled();
     });
   });
 });

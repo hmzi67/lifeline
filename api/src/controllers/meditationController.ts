@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../config/database.js';
+import { cursorArgs, cursorPage, pageSize } from '../utils/pagination.js';
 
 /** Minutes, from the admin form: a whole number 1-600, or null to clear. undefined when not sent. */
 const parseDuration = (value: unknown): number | null | undefined => {
@@ -73,7 +72,7 @@ export const getMeditations = async (req: Request, res: Response) => {
     const { type, limit, offset } = req.query;
 
     const where = type ? { type: type as string } : {};
-    const take = limit ? parseInt(limit as string) : undefined;
+    const take = pageSize(limit);
     const skip = offset ? parseInt(offset as string) : undefined;
 
     const meditations = await prisma.meditation.findMany({
@@ -107,19 +106,20 @@ export const getMeditationsByType = async (req: Request, res: Response) => {
   try {
     const { type } = req.params;
 
-    const meditations = await prisma.meditation.findMany({
+    const meditationsPage = await prisma.meditation.findMany({
+      ...cursorArgs(req.query),
       where: {
         type
       },
-      orderBy: {
-        name: 'asc'
-      },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
       include: SESSION_SUMMARY,
     });
+    const { items: meditations, nextCursor } = cursorPage(meditationsPage, req.query);
 
     res.json({
       success: true,
       data: meditations.map(withDuration),
+      nextCursor,
       count: meditations.length
     });
   } catch (error) {

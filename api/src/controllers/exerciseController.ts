@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../config/database.js';
+import { cursorArgs, cursorPage } from '../utils/pagination.js';
 
 interface ExerciseQuery {
   query?: string;
@@ -34,19 +33,12 @@ interface UpdateExerciseBody {
 // Get all exercises
 export const getAllExercises = async (req: Request, res: Response): Promise<void> => {
   try {
-    const exercises = await prisma.exercise.findMany({
+    const exercisesPage = await prisma.exercise.findMany({
+      ...cursorArgs(req.query),
+      orderBy: { id: 'asc' },
       include: {
-        userExercises: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        },
+        // Counts only: these routes are public, so never list who is assigned.
+        _count: { select: { userExercises: true } },
         challengeExercises: {
           include: {
             challenge: {
@@ -60,10 +52,12 @@ export const getAllExercises = async (req: Request, res: Response): Promise<void
         }
       }
     });
+    const { items: exercises, nextCursor } = cursorPage(exercisesPage, req.query);
 
     res.status(200).json({
       success: true,
       data: exercises,
+      nextCursor,
       message: 'Exercises retrieved successfully'
     });
   } catch (error) {
@@ -85,17 +79,8 @@ export const getExerciseById = async (req: Request, res: Response): Promise<void
       where: { id },
       include: {
         exerciseDetails: true,
-        userExercises: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        },
+        // Counts only: these routes are public, so never list who is assigned.
+        _count: { select: { userExercises: true } },
         challengeExercises: {
           include: {
             challenge: {
@@ -295,26 +280,21 @@ export const searchExercises = async (req: Request<{}, {}, {}, ExerciseQuery>, r
       whereClause.duration = duration;
     }
 
-    const exercises = await prisma.exercise.findMany({
+    const exercisesPage = await prisma.exercise.findMany({
+      ...cursorArgs(req.query),
+      orderBy: { id: 'asc' },
       where: whereClause,
       include: {
-        userExercises: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        }
+        // Counts only: these routes are public, so never list who is assigned.
+        _count: { select: { userExercises: true } }
       }
     });
+    const { items: exercises, nextCursor } = cursorPage(exercisesPage, req.query);
 
     res.status(200).json({
       success: true,
       data: exercises,
+      nextCursor,
       message: 'Exercise search completed successfully'
     });
   } catch (error) {
@@ -332,7 +312,9 @@ export const getExercisesByPurpose = async (req: Request<{ purpose: string }>, r
   try {
     const { purpose } = req.params;
 
-    const exercises = await prisma.exercise.findMany({
+    const exercisesPage = await prisma.exercise.findMany({
+      ...cursorArgs(req.query),
+      orderBy: { id: 'asc' },
       where: {
         purpose: {
           contains: purpose,
@@ -340,23 +322,16 @@ export const getExercisesByPurpose = async (req: Request<{ purpose: string }>, r
         }
       },
       include: {
-        userExercises: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                username: true
-              }
-            }
-          }
-        }
+        // Counts only: these routes are public, so never list who is assigned.
+        _count: { select: { userExercises: true } }
       }
     });
+    const { items: exercises, nextCursor } = cursorPage(exercisesPage, req.query);
 
     res.status(200).json({
       success: true,
       data: exercises,
+      nextCursor,
       message: `Exercises for purpose '${purpose}' retrieved successfully`
     });
   } catch (error) {

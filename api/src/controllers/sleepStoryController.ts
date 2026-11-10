@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../config/database.js';
+import { pageSize } from '../utils/pagination.js';
 
 // ── Create ────────────────────────────────────────────────────────────────────
 export const createSleepStory = async (req: Request, res: Response) => {
@@ -41,7 +40,7 @@ export const getSleepStories = async (req: Request, res: Response) => {
     const { category, limit, offset } = req.query;
 
     const where = category ? { category: category as string } : {};
-    const take = limit ? parseInt(limit as string) : undefined;
+    const take = pageSize(limit);
     const skip = offset ? parseInt(offset as string) : undefined;
 
     const stories = await prisma.sleepStory.findMany({

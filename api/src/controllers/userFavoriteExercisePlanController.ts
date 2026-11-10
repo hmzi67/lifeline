@@ -1,8 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
-
-const prisma = new PrismaClient();
 
 // Enough of the plan for the Favourites screen; the schedule is only read to count exercises.
 const PLAN_SELECT = {

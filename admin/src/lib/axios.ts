@@ -7,14 +7,24 @@ const api = axios.create({
   withCredentials: true, // Needed to send refresh token cookie
 });
 
-// Request interceptor: Add access token from localStorage. Always sent: the
+// The access token is kept in memory only, out of reach of anything reading storage.
+// After a reload the first 401 restores it from the HttpOnly refresh cookie.
+let accessToken: string | null = null;
+// Earlier versions persisted the token; drop any copy left in the browser.
+localStorage.removeItem('token');
+
+export const getAccessToken = () => accessToken;
+export const setAccessToken = (token: string | null) => {
+  accessToken = token;
+};
+
+// Request interceptor: attach the in-memory access token. Always sent: the
 // admin writes to routes such as /blogs and /blogs/categories that are public
 // only for reads, and public endpoints ignore the header.
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    if (accessToken) {
+      config.headers.Authorization = `Bearer ${accessToken}`;
     }
     return config;
   },
@@ -26,7 +36,7 @@ api.interceptors.request.use(
 let refreshPromise: Promise<string> | null = null;
 
 const redirectToLogin = () => {
-  localStorage.removeItem('token');
+  accessToken = null;
   localStorage.removeItem('admin-auth-store'); // ponytail: clear zustand persist to prevent infinite reload loop
   if (window.location.pathname !== '/login') {
     window.location.href = '/login';
@@ -57,7 +67,7 @@ api.interceptors.response.use(
               if (!newAccessToken) {
                 throw new Error('Invalid token refresh response from server.');
               }
-              localStorage.setItem('token', newAccessToken);
+              accessToken = newAccessToken;
               return newAccessToken as string;
             })
             .finally(() => {

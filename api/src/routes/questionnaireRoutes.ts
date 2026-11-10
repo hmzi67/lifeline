@@ -43,8 +43,12 @@ import {
   updateGoalWeight,
   updateMotivationFor,
 } from '../controllers/questionnaireController.js';
+import authenticate from '../middleware/authenticate.js';
 
 const router = Router();
+
+// Every questionnaire route acts on the signed-in user's own answers.
+router.use(authenticate);
 
 // General questionnaire routes
 router.get('/', getUserQuestionnaire);

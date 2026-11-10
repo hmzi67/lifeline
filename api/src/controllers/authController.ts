@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import bcrypt from 'bcryptjs';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Request, Response } from 'express';
@@ -9,14 +9,15 @@ import { z } from 'zod';
 import { config } from '../config/index.js';
 import { sendEmailVerificationEmail, sendPasswordResetEmail } from '../services/emailService.js';
 import { isSuspended } from '../utils/accountAccess.js';
-import { checkOtp, clearedOtp, failedAttempt, issueOtp, otpErrorMessage } from '../services/otpService.js';
+import { burnedOtp, checkOtp, clearedOtp, failedAttempt, isLastAttempt, issueOtp, MAX_OTP_ATTEMPTS, otpErrorMessage } from '../services/otpService.js';
+import { claimResetSend, RESET_DAILY_FAILURES, resetBudgetCleared, resetWindowOpen } from '../services/passwordResetBudget.js';
 import {
   AppleIdentityConfigurationError,
   AppleIdentityProviderError,
   verifyAppleIdentityToken,
 } from '../services/appleIdentityService.js';
 import { encryptAppleToken, exchangeAppleAuthorizationCode } from '../services/appleTokenService.js';
-
+import { PASSWORD_MIN_LENGTH, PASSWORD_TOO_SHORT } from '../utils/passwordPolicy.js';
 
 // JWT Payload interfaces
 interface JWTPayload {
@@ -29,8 +30,6 @@ interface RefreshTokenPayload {
   userId: string;
 }
 
-const prisma = new PrismaClient();
-
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Validation schemas
@@ -38,7 +37,7 @@ const signupSchema = z.object({
   email: z.string().email('Please provide a valid email address'),
   username: z.string().min(1, 'Username is required').optional(),
   name: z.string().min(1, 'Name is required').optional(),
-  password: z.string().min(8, 'Password must be at least 8 characters long'),
+  password: z.string().min(PASSWORD_MIN_LENGTH, PASSWORD_TOO_SHORT),
 });
 
 const loginSchema = z.object({
@@ -51,8 +50,9 @@ export const generateTokens = (userId: string, email: string, roleId?: string) =
   const accessToken = jwt.sign(
     { userId, email, roleId },
     config.jwt.secret,
-    // An hour, so most app opens need no refresh (each refresh is a chance to lose its reply).
-    { expiresIn: '1h' }
+    // Short-lived (JWT_EXPIRES_IN, 15m by default): a leaked access token is soon useless,
+    // and refresh resends a lost replacement, so frequent refreshes cannot strand a client.
+    { expiresIn: config.jwt.expiresIn as jwt.SignOptions['expiresIn'] }
   );
 
   // jwtid keeps two refresh tokens issued in the same second distinct (token is @unique)
@@ -200,7 +200,7 @@ export const signup = async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         message: 'Validation error',
-        errors: error.errors.map(err => ({
+        errors: error.issues.map(err => ({
           field: err.path.join('.'),
           message: err.message,
         })),
@@ -341,12 +341,14 @@ export const verify = async (req: Request, res: Response) => {
 
     const result = checkOtp(user, otp, 'verify_email');
     if (result !== 'ok') {
-      if (result === 'invalid' && user.otpPurpose === 'verify_email') {
+      const burnsCode = result === 'invalid' && user.otpPurpose === 'verify_email' && !!user.otp;
+      if (burnsCode) {
         await prisma.user.update({ where: { id: user.id }, data: failedAttempt(user) });
       }
       return res.status(400).json({
         success: false,
-        message: otpErrorMessage(result),
+        // The guess that uses up the last attempt already gets the "request a new code" reply.
+        message: otpErrorMessage(burnsCode && isLastAttempt(user) ? 'locked' : result),
       });
     }
 
@@ -501,7 +503,7 @@ export const login = async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         message: 'Validation error',
-        errors: error.errors.map(err => ({
+        errors: error.issues.map(err => ({
           field: err.path.join('.'),
           message: err.message,
         })),
@@ -628,12 +630,25 @@ export const refreshToken = async (req: Request, res: Response) => {
     // Rotate without ever stranding the client: the presented token stays valid until
     // its replacement is first used, which proves the client received it.
     const now = new Date();
-    let replacement = storedToken.replacedById
+    const existing = storedToken.replacedById
       ? await prisma.refreshToken.findFirst({
           where: { id: storedToken.replacedById, expiresAt: { gt: now } },
-          select: { id: true, token: true },
+          select: { id: true, token: true, replacedById: true },
         })
       : null;
+
+    // Reuse detection: this token's replacement has itself been used, so the client already
+    // moved past this token. Presenting it again means it was copied: end every session.
+    if (existing?.replacedById) {
+      await prisma.refreshToken.deleteMany({ where: { userId: storedToken.user.id } });
+      res.clearCookie('refreshToken');
+      return res.status(401).json({
+        success: false,
+        message: 'This session is no longer valid. Please sign in again.',
+        code: 'REFRESH_TOKEN_REUSED',
+      });
+    }
+    let replacement: { id: string; token: string } | null = existing;
 
     // No replacement yet (or it expired): issue one. When the token already has an unused
     // replacement, the reply carrying it was lost or two refreshes raced, so it is sent again.
@@ -674,8 +689,10 @@ export const refreshToken = async (req: Request, res: Response) => {
       });
     }
 
-    // Using this token proves the client received it, so the token it replaced can go.
-    await prisma.refreshToken.deleteMany({ where: { replacedById: storedToken.id } });
+    // Using this token proves the client received it. The token it replaced is kept one more
+    // generation as the reuse tripwire above; the ones before that can go.
+    const parent = await prisma.refreshToken.findFirst({ where: { replacedById: storedToken.id }, select: { id: true } });
+    if (parent) await prisma.refreshToken.deleteMany({ where: { replacedById: parent.id } });
 
     const { accessToken } = generateTokens(
       storedToken.user.id,
@@ -808,26 +825,41 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
     // Check if a user exists
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase() },
-      select: { id: true, email: true, username: true },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        passwordResetWindowStart: true,
+        passwordResetSentCount: true,
+        passwordResetLastSentAt: true,
+        passwordResetFailedCount: true,
+      },
     });
 
-    // Always return success to prevent email enumeration attacks
-    if (!user) {
-      return res.status(200).json({
+    const genericReply = () =>
+      res.status(200).json({
         success: true,
         message: 'If an account with this email exists, a password reset OTP has been sent.',
       });
-    }
+
+    // Always return success to prevent email enumeration attacks
+    if (!user) return genericReply();
+
+    // Per-account cooldown and daily caps; a throttled account gets the same reply, so
+    // this endpoint still cannot be used to tell which emails have accounts.
+    const budget = claimResetSend(user);
+    if (!budget) return genericReply();
 
     // Generate OTP for password reset
     const reset = issueOtp('reset_password');
     const resetOTP = reset.otp;
 
-    // Update user with reset OTP
-    await prisma.user.update({
-      where: { id: user.id },
-      data: reset,
+    // Conditional on the last-sent time read above, so two requests at once send one code.
+    const { count: claimed } = await prisma.user.updateMany({
+      where: { id: user.id, passwordResetLastSentAt: user.passwordResetLastSentAt },
+      data: { ...reset, ...budget },
     });
+    if (!claimed) return genericReply();
 
     // Send email with reset OTP
     try {
@@ -874,10 +906,10 @@ export const resetPassword = async (req: Request, res: Response) => {
       });
     }
 
-    if (newPassword.length < 8) {
+    if (String(newPassword).length < PASSWORD_MIN_LENGTH) {
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 8 characters long',
+        message: PASSWORD_TOO_SHORT,
       });
     }
 
@@ -892,13 +924,51 @@ export const resetPassword = async (req: Request, res: Response) => {
     }
 
     const result = checkOtp(user, otp, 'reset_password');
-    if (result !== 'ok') {
-      if (result === 'invalid' && user.otpPurpose === 'reset_password') {
-        await prisma.user.update({ where: { id: user.id }, data: failedAttempt(user) });
-      }
+    if (result === 'expired' || result === 'locked' || !user.otp || user.otpPurpose !== 'reset_password') {
       return res.status(400).json({
         success: false,
-        message: otpErrorMessage(result),
+        message: otpErrorMessage(result === 'ok' ? 'invalid' : result),
+      });
+    }
+
+    // Claim one guess before comparing (it is refunded by clearing on success), so
+    // parallel requests cannot go past the per-code or the per-account budget.
+    const inWindow = resetWindowOpen(user);
+    const { count: claimed } = await prisma.user.updateMany({
+      where: {
+        id: user.id,
+        otp: user.otp,
+        otpAttempts: { lt: MAX_OTP_ATTEMPTS },
+        ...(inWindow
+          ? { passwordResetFailedCount: { lt: RESET_DAILY_FAILURES } }
+          // The 24h window has run out: this guess starts a new one.
+          : { passwordResetWindowStart: user.passwordResetWindowStart }),
+      },
+      data: {
+        otpAttempts: { increment: 1 },
+        ...(inWindow
+          ? { passwordResetFailedCount: { increment: 1 } }
+          : { passwordResetWindowStart: new Date(), passwordResetSentCount: 0, passwordResetFailedCount: 1 }),
+      },
+    });
+    if (!claimed) {
+      await prisma.user.updateMany({ where: { id: user.id, otp: user.otp }, data: clearedOtp });
+      return res.status(429).json({
+        success: false,
+        message: 'Too many incorrect codes. Please try again later.',
+        code: 'OTP_ATTEMPTS_EXCEEDED',
+      });
+    }
+
+    if (result !== 'ok') {
+      // The last allowed guess for this code was wrong: burn it.
+      const { count: burned } = await prisma.user.updateMany({
+        where: { id: user.id, otp: user.otp, otpAttempts: { gte: MAX_OTP_ATTEMPTS } },
+        data: burnedOtp,
+      });
+      return res.status(400).json({
+        success: false,
+        message: otpErrorMessage(burned ? 'locked' : result),
       });
     }
 
@@ -913,6 +983,7 @@ export const resetPassword = async (req: Request, res: Response) => {
         data: {
           password: hashedPassword,
           ...clearedOtp, // Clear OTP after a successful reset
+          ...resetBudgetCleared,
         },
       }),
       prisma.refreshToken.deleteMany({

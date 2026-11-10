@@ -18,9 +18,7 @@ import { MediaUploadField } from '@/components/shared/MediaUploadField';
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface User { id: string; email: string; username: string; }
 interface Challenge { id: string; name: string; status: string; }
-interface UserExercise { user: User; }
 interface ChallengeExercise { challenge: Challenge; }
 
 interface ExerciseDetailData {
@@ -45,7 +43,7 @@ interface Exercise {
     videoUrl: string | null;
     difficulty: string | null;
     caloriesBurnEstimate: number | null;
-    userExercises?: UserExercise[];
+    _count?: { userExercises?: number };
     challengeExercises?: ChallengeExercise[];
     exerciseDetails?: ExerciseDetailData[];
 }
@@ -642,7 +640,7 @@ const ExerciseComponent: React.FC = () => {
                                             </td>
                                             <td className="px-6 py-4">
                                                 <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-100">
-                                                    {ex.userExercises?.length ?? 0} users
+                                                    {ex._count?.userExercises ?? 0} users
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 text-right">

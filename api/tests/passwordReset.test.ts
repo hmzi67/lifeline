@@ -1,7 +1,7 @@
 export {};
 
 const mockPrisma: any = {
-  user: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+  user: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn(async () => ({ count: 1 })) },
   refreshToken: { deleteMany: jest.fn() },
   $transaction: jest.fn(async (ops: unknown[]) => ops),
 };
@@ -47,13 +47,22 @@ describe('password reset', () => {
   });
 
   it('finds the account case-insensitively, like the request that issued the code', async () => {
-    mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'user-1', email: 'eve@example.test', otpPurpose: 'reset_password' });
+    mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'user-1', email: 'eve@example.test', otp: '123456', otpPurpose: 'reset_password', otpAttempts: 0, passwordResetFailedCount: 0, passwordResetWindowStart: new Date() });
     const res = createResponse();
 
-    await resetPassword({ body: { email: ' Eve@Example.TEST ', otp: '123456', newPassword: 'NewPass123!' } } as any, res);
+    await resetPassword({ body: { email: ' Eve@Example.TEST ', otp: '123456', newPassword: 'NewPass1234!' } } as any, res);
 
     expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({ where: { email: 'eve@example.test' } });
     expect(res.statusCode).toBe(200);
     expect(mockPrisma.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 'user-1' } });
+    // Hashes the new password at production bcrypt cost, which can pass 5s in a parallel run.
+  }, 30000);
+
+  it('refuses a new password shorter than 12 characters', async () => {
+    const res = createResponse();
+    await resetPassword({ body: { email: 'eve@example.test', otp: '123456', newPassword: 'Short1234!x' } } as any, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.message).toBe('Password must be at least 12 characters long');
+    expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
   });
 });

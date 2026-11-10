@@ -1,11 +1,10 @@
 import { Request, Response } from 'express';
 import { medicationAdherence } from '../services/medicationAdherence.js';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import jwt from 'jsonwebtoken';
 import { DEFAULT_WATER_GOAL_UNIT, getDefaultWaterGoalAmount } from '../utils/waterGoal.js';
 import { config } from '../config/index.js';
 
-const prisma = new PrismaClient();
 const DEFAULT_WATER_GOAL_ML = 2500;
 
 const getDefaultWaterGoal = async () => {

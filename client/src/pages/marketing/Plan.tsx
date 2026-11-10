@@ -8,6 +8,7 @@ import { Elements } from "@stripe/react-stripe-js";
 import StripePaymentForm from "@/components/payment/StripePaymentForm";
 import { config } from "@/config";
 import api from "@/lib/axios";
+import { useAuth } from "@/contexts/AuthContext";
 
 if (!config.stripePublishableKey) {
   // VITE_* vars are baked in at build time, so a missing key here means the
@@ -47,6 +48,7 @@ interface PricingPlan {
 
 export default function Plan() {
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
   const [plans, setPlans] = useState<PricingPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPayment, setShowPayment] = useState(false);
@@ -81,14 +83,14 @@ export default function Plan() {
   // VIP bought in the iOS app is billed by Apple; a card checkout here would
   // be refused by the API, so tell the user up front.
   useEffect(() => {
-    if (!localStorage.getItem('token')) return;
+    if (!isAuthenticated) return;
     api.get('/subscription/status')
       .then((res) => {
         const status = res.data?.data;
         setAppStoreBilled(status?.active === true && status?.source === 'app_store');
       })
       .catch(() => setAppStoreBilled(false));
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     return () => {

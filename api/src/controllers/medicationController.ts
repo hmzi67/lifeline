@@ -1,10 +1,9 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { getMediaCategory } from '../middleware/upload.js';
 import { config } from '../config/index.js';
-
-const prisma = new PrismaClient();
+import { cursorArgs, cursorPage } from '../utils/pagination.js';
 
 // Helper function to get userId from token
 const getUserIdFromToken = (req: Request): string | null => {
@@ -91,7 +90,9 @@ export const getMedications = async (req: Request, res: Response) => {
       });
     }
 
-    const medications = await prisma.medication.findMany({
+    const medicationsPage = await prisma.medication.findMany({
+      ...cursorArgs(req.query),
+      orderBy: { id: 'asc' },
       include: {
         user: {
           select: {
@@ -102,10 +103,12 @@ export const getMedications = async (req: Request, res: Response) => {
         }
       }
     });
+    const { items: medications, nextCursor } = cursorPage(medicationsPage, req.query);
     
     res.json({
       success: true,
       data: medications,
+      nextCursor,
       count: medications.length
     });
   } catch (error) {

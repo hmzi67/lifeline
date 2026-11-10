@@ -8,10 +8,8 @@
  *   npm run seed:mock
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import bcrypt from 'bcryptjs';
-
-const prisma = new PrismaClient();
 
 function log(section: string) {
   console.log(`\n${'─'.repeat(60)}`);

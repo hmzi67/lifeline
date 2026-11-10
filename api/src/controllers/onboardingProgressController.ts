@@ -1,10 +1,8 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 import { findActiveLicense, findFreeWeek } from '../services/subscriptionAccessService.js';
-
-const prisma = new PrismaClient();
 
 const resumableRoutes = [
   '/(auth)/Gender',
@@ -120,7 +118,7 @@ export const updateOnboardingProgress = async (
     return res.status(400).json({
       success: false,
       message: 'Validation error',
-      errors: parsed.error.errors.map(error => ({
+      errors: parsed.error.issues.map(error => ({
         field: error.path.join('.'),
         message: error.message,
       })),
@@ -160,7 +158,6 @@ export const updateOnboardingProgress = async (
       data.completedAt = null;
     }
   }
-
 
   if (patch.pricingPlanId !== undefined) {
     data.pricingPlanId = patch.pricingPlanId;

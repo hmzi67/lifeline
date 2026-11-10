@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import type { AuthUser } from '../types/auth.types';
-import api from '../lib/axios';
+import api, { refreshAccessToken, setAccessToken } from '../lib/axios';
 
 interface AuthContextType {
     user: AuthUser | null;
@@ -10,7 +10,7 @@ interface AuthContextType {
     isAuthenticated: boolean;
     login: (email: string, password: string) => Promise<void>;
     signup: (name: string, email: string, password: string) => Promise<void>;
-    logout: () => void;
+    logout: () => Promise<void>;
     setUser: (user: AuthUser | null) => void;
     setToken: (token: string | null) => void;
 }
@@ -29,19 +29,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Memoize isAuthenticated to prevent unnecessary re-renders
     const isAuthenticated = useMemo(() => !!user && !!token, [user, token]);
 
-    // Initialize auth state from localStorage
+    // Restore the session after a reload: the access token is never stored, so get a
+    // fresh one from the HttpOnly refresh cookie. No cached user means nobody signed in.
     useEffect(() => {
         const initializeAuth = async () => {
             try {
-                const storedToken = localStorage.getItem('token');
                 const storedUser = localStorage.getItem('user');
 
-                if (storedToken && storedUser) {
-                    setTokenState(storedToken);
+                if (storedUser) {
+                    setTokenState(await refreshAccessToken());
                     setUser(JSON.parse(storedUser));
                 }
-            } catch (error) {
-                console.error('Error initializing auth:', error);
+            } catch {
+                // No valid refresh cookie: the session has ended.
                 clearAuthState();
             } finally {
                 setIsLoading(false);
@@ -54,17 +54,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const clearAuthState = () => {
         setUser(null);
         setTokenState(null);
-        localStorage.removeItem('token');
+        setAccessToken(null);
         localStorage.removeItem('user');
     };
 
     const setToken = (newToken: string | null) => {
         setTokenState(newToken);
-        if (newToken) {
-            localStorage.setItem('token', newToken);
-        } else {
-            localStorage.removeItem('token');
-        }
+        setAccessToken(newToken);
     };
 
     const updateUser = (newUser: AuthUser | null) => {
@@ -129,7 +125,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
 
-    const logout = () => {
+    const logout = async () => {
+        // Revoke the refresh cookie too, or the next page load would sign the user back in.
+        await api.post('/auth/logout').catch(() => undefined);
         clearAuthState();
         // Redirect to home page
         window.location.href = '/';
