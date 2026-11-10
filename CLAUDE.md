@@ -78,7 +78,7 @@ Note: `admin` has no test script and `client`/`admin` builds differ in whether t
 - `services/crudService.ts` provides a generic `CrudService<T>` class (getAll/getById/create/update/delete + customGet/customPost) — prefer extending/instantiating this for new resource services instead of hand-writing CRUD calls.
 - API base URL resolution (`config/index.ts`): `VITE_API_URL` env var, falling back to same-origin `/api` in production builds and `http://localhost:3000/api` in dev. Both frontends assume the API is mounted under `/api`.
 - Client routing (`client/src/App.tsx`) uses `react-router-dom` with route-level lazy loading (`lazy()` + `Suspense`) for every page except a few loaded eagerly for the auth flow. Route protection is handled by `components/routes/ProtectedRoutes.tsx` + `contexts/AuthContext`, not by per-page checks.
-- Auth state: `client` uses `contexts/AuthContext` + `store/useUserStore.ts` (Zustand); `admin` uses `store/useAuthStore.ts` + `store/useUserStore.ts`. Access token lives in `localStorage`, refresh token is an httpOnly cookie (hence `withCredentials: true` on the axios instance).
+- Auth state: `client` uses `contexts/AuthContext`; `admin` uses `store/useAuthStore.ts` + `store/useUserStore.ts`. Access token lives in `localStorage`, refresh token is an httpOnly cookie (hence `withCredentials: true` on the axios instance).
 
 ## Deployment
 
