@@ -5,6 +5,8 @@ import {
     removeFavoriteExercisePlan,
 } from '../controllers/userFavoriteExercisePlanController.js';
 import authenticate from '../middleware/authenticate.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { favoriteExercisePlanBody } from '../validators/trackingSchemas.js';
 
 const router = Router();
 
@@ -15,7 +17,7 @@ router.use(authenticate);
 router.get('/', getFavoriteExercisePlans);
 
 // POST /api/favorite-exercise-plans - Add an exercise plan to favourites
-router.post('/', addFavoriteExercisePlan);
+router.post('/', validateBody(favoriteExercisePlanBody), addFavoriteExercisePlan);
 
 // DELETE /api/favorite-exercise-plans/:planId - Remove an exercise plan from favourites
 router.delete('/:planId', removeFavoriteExercisePlan);

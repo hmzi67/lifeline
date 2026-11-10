@@ -11,6 +11,8 @@ import { clearIntake, getIntakesForDay, recordIntake } from '../controllers/medi
 import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
 import { imageUpload } from '../middleware/upload.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { medicationBody } from '../validators/trackingSchemas.js';
 
 const router = Router();
 
@@ -31,10 +33,10 @@ router.delete('/:id/intakes/:date', authenticate, clearIntake);
 router.get('/:id', authenticate, getMedicationById);
 
 // Create a new medication
-router.post('/', authenticate, imageUpload.single('file'), createMedication);
+router.post('/', authenticate, imageUpload.single('file'), validateBody(medicationBody), createMedication);
 
 // Update a medication
-router.put('/:id', authenticate, imageUpload.single('file'), updateMedication);
+router.put('/:id', authenticate, imageUpload.single('file'), validateBody(medicationBody), updateMedication);
 
 // Delete a medication
 router.delete('/:id', authenticate, deleteMedication);

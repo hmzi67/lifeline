@@ -9,6 +9,8 @@ import {
 } from '../controllers/userActiveExercisePlanController.js';
 import authenticate from '../middleware/authenticate.js';
 import { bindBodyUserIdToCaller, requireRecordOwner, requireSelfOrAdmin } from '../middleware/ownership.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { activeExercisePlanWeekBody, startActiveExercisePlanBody } from '../validators/trackingSchemas.js';
 
 const router = Router();
 
@@ -20,7 +22,7 @@ const ownsPlan = requireRecordOwner('userActiveExercisePlan');
 router.get('/user/:userId', requireSelfOrAdmin(), getUserActiveExercisePlan);
 
 // POST /api/active-exercise-plans/start - Start a new active exercise plan for the caller
-router.post('/start', bindBodyUserIdToCaller, startActiveExercisePlan);
+router.post('/start', bindBodyUserIdToCaller, validateBody(startActiveExercisePlanBody), startActiveExercisePlan);
 
 // PUT /api/active-exercise-plans/:id/pause - Pause active exercise plan
 router.put('/:id/pause', ownsPlan, pauseActiveExercisePlan);
@@ -29,7 +31,7 @@ router.put('/:id/pause', ownsPlan, pauseActiveExercisePlan);
 router.put('/:id/resume', ownsPlan, resumeActiveExercisePlan);
 
 // PUT /api/active-exercise-plans/:id/current-week - Update current week
-router.put('/:id/current-week', ownsPlan, updateCurrentWeek);
+router.put('/:id/current-week', ownsPlan, validateBody(activeExercisePlanWeekBody), updateCurrentWeek);
 
 // DELETE /api/active-exercise-plans/:id - Delete active exercise plan
 router.delete('/:id', ownsPlan, deleteActiveExercisePlan);

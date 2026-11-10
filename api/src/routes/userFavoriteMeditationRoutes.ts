@@ -7,6 +7,8 @@ import {
 } from '../controllers/userFavoriteMeditationController.js';
 import authenticate from '../middleware/authenticate.js';
 import requireActiveLicense from '../middleware/requireActiveLicense.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { favoriteMeditationBody } from '../validators/trackingSchemas.js';
 
 const router = Router();
 
@@ -20,7 +22,7 @@ router.get('/user/:userId', authenticate, requireActiveLicense, getUserFavoriteM
 router.get('/check/:userId/:sessionId', authenticate, requireActiveLicense, checkFavoriteMeditation);
 
 // POST /api/favorite-meditations - Add meditation to favorites
-router.post('/', authenticate, requireActiveLicense, addFavoriteMeditation);
+router.post('/', authenticate, requireActiveLicense, validateBody(favoriteMeditationBody), addFavoriteMeditation);
 
 // DELETE /api/favorite-meditations/:id - Remove meditation from favorites
 router.delete('/:id', authenticate, requireActiveLicense, removeFavoriteMeditation);

@@ -10,6 +10,8 @@ import {
 } from '../controllers/notificationController.js';
 import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { adminNotificationBody, myNotificationBody } from '../validators/trackingSchemas.js';
 
 const router = Router();
 
@@ -20,10 +22,10 @@ router.get('/', authenticate, getMyNotifications);
 router.get('/unread-count', authenticate, getUnreadCount);
 
 // POST /api/notifications - Record a notification the app showed locally
-router.post('/', authenticate, createMyNotification);
+router.post('/', authenticate, validateBody(myNotificationBody), createMyNotification);
 
 // POST /api/notifications/send - Admin: notify a user (stored + pushed)
-router.post('/send', authenticate, authorize(['admin']), sendNotificationToUser);
+router.post('/send', authenticate, authorize(['admin']), validateBody(adminNotificationBody), sendNotificationToUser);
 
 // PATCH /api/notifications/read-all - Mark all as read
 router.patch('/read-all', authenticate, markAllNotificationsRead);

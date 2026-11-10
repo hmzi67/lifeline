@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { completeUserExerciseProgress, getUserExerciseProgress } from '../controllers/userExerciseProgressController.js';
 import authenticate from '../middleware/authenticate.js';
 import { bindBodyUserIdToCaller, requireSelfOrAdmin } from '../middleware/ownership.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { exerciseProgressBody } from '../validators/trackingSchemas.js';
 
 const router = Router();
 
@@ -11,6 +13,6 @@ router.use(authenticate);
 router.get('/user/:userId', requireSelfOrAdmin(), getUserExerciseProgress);
 
 // POST /api/user-exercise-progress/complete - Save the caller's completed exercise progress
-router.post('/complete', bindBodyUserIdToCaller, completeUserExerciseProgress);
+router.post('/complete', bindBodyUserIdToCaller, validateBody(exerciseProgressBody), completeUserExerciseProgress);
 
 export default router;

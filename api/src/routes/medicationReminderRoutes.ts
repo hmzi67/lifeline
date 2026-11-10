@@ -9,6 +9,8 @@ import {
     updateMedicationReminder
 } from '../controllers/medicationReminderController.js';
 import authenticate from '../middleware/authenticate.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { medicationReminderBody } from '../validators/trackingSchemas.js';
 
 const router = Router();
 
@@ -22,10 +24,10 @@ router.get('/user/:userId', authenticate, getUserMedicationReminders);
 router.get('/:id', authenticate, getMedicationReminderById);
 
 // POST /api/medication-reminders - Create medication reminder
-router.post('/', authenticate, createMedicationReminder);
+router.post('/', authenticate, validateBody(medicationReminderBody), createMedicationReminder);
 
 // PUT /api/medication-reminders/:id - Update medication reminder
-router.put('/:id', authenticate, updateMedicationReminder);
+router.put('/:id', authenticate, validateBody(medicationReminderBody), updateMedicationReminder);
 
 // PUT /api/medication-reminders/:id/toggle - Toggle reminder enabled status
 router.put('/:id/toggle', authenticate, toggleMedicationReminder);
