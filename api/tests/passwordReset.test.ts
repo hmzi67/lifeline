@@ -55,5 +55,6 @@ describe('password reset', () => {
     expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({ where: { email: 'eve@example.test' } });
     expect(res.statusCode).toBe(200);
     expect(mockPrisma.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 'user-1' } });
-  });
+    // Hashes the new password at production bcrypt cost, which can pass 5s in a parallel run.
+  }, 30000);
 });

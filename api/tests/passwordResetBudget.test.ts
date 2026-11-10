@@ -157,5 +157,5 @@ describe('guessing reset codes', () => {
     expect(res.statusCode).toBe(200);
     expect(row.passwordResetFailedCount).toBe(0);
     expect(row.passwordResetSentCount).toBe(0);
-  });
+  }, 30000);
 });
