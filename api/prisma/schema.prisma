@@ -45,6 +45,11 @@ model User {
   otpPurpose           String?   @map("otp_purpose") @db.VarChar(20)
   otpExpiresAt         DateTime? @map("otp_expires_at")
   otpAttempts          Int       @default(0) @map("otp_attempts")
+  // Per-account password reset budget for a rolling 24h window (see passwordResetBudget.ts).
+  passwordResetWindowStart DateTime? @map("password_reset_window_start")
+  passwordResetSentCount   Int       @default(0) @map("password_reset_sent_count")
+  passwordResetLastSentAt  DateTime? @map("password_reset_last_sent_at")
+  passwordResetFailedCount Int       @default(0) @map("password_reset_failed_count")
   status               String?   @db.VarChar(20)
   trialUsedAt          DateTime? @map("trial_used_at")
   roleId               String?   @map("role_id")

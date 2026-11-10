@@ -9,7 +9,8 @@ import { z } from 'zod';
 import { config } from '../config/index.js';
 import { sendEmailVerificationEmail, sendPasswordResetEmail } from '../services/emailService.js';
 import { isSuspended } from '../utils/accountAccess.js';
-import { checkOtp, clearedOtp, failedAttempt, issueOtp, otpErrorMessage } from '../services/otpService.js';
+import { checkOtp, clearedOtp, failedAttempt, issueOtp, MAX_OTP_ATTEMPTS, otpErrorMessage } from '../services/otpService.js';
+import { claimResetSend, RESET_DAILY_FAILURES, resetBudgetCleared, resetWindowOpen } from '../services/passwordResetBudget.js';
 import {
   AppleIdentityConfigurationError,
   AppleIdentityProviderError,
@@ -808,26 +809,41 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
     // Check if a user exists
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase() },
-      select: { id: true, email: true, username: true },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        passwordResetWindowStart: true,
+        passwordResetSentCount: true,
+        passwordResetLastSentAt: true,
+        passwordResetFailedCount: true,
+      },
     });
 
-    // Always return success to prevent email enumeration attacks
-    if (!user) {
-      return res.status(200).json({
+    const genericReply = () =>
+      res.status(200).json({
         success: true,
         message: 'If an account with this email exists, a password reset OTP has been sent.',
       });
-    }
+
+    // Always return success to prevent email enumeration attacks
+    if (!user) return genericReply();
+
+    // Per-account cooldown and daily caps; a throttled account gets the same reply, so
+    // this endpoint still cannot be used to tell which emails have accounts.
+    const budget = claimResetSend(user);
+    if (!budget) return genericReply();
 
     // Generate OTP for password reset
     const reset = issueOtp('reset_password');
     const resetOTP = reset.otp;
 
-    // Update user with reset OTP
-    await prisma.user.update({
-      where: { id: user.id },
-      data: reset,
+    // Conditional on the last-sent time read above, so two requests at once send one code.
+    const { count: claimed } = await prisma.user.updateMany({
+      where: { id: user.id, passwordResetLastSentAt: user.passwordResetLastSentAt },
+      data: { ...reset, ...budget },
     });
+    if (!claimed) return genericReply();
 
     // Send email with reset OTP
     try {
@@ -892,10 +908,48 @@ export const resetPassword = async (req: Request, res: Response) => {
     }
 
     const result = checkOtp(user, otp, 'reset_password');
+    if (result === 'expired' || result === 'locked' || !user.otp || user.otpPurpose !== 'reset_password') {
+      return res.status(400).json({
+        success: false,
+        message: otpErrorMessage(result === 'ok' ? 'invalid' : result),
+      });
+    }
+
+    // Claim one guess before comparing (it is refunded by clearing on success), so
+    // parallel requests cannot go past the per-code or the per-account budget.
+    const inWindow = resetWindowOpen(user);
+    const { count: claimed } = await prisma.user.updateMany({
+      where: {
+        id: user.id,
+        otp: user.otp,
+        otpAttempts: { lt: MAX_OTP_ATTEMPTS },
+        ...(inWindow
+          ? { passwordResetFailedCount: { lt: RESET_DAILY_FAILURES } }
+          // The 24h window has run out: this guess starts a new one.
+          : { passwordResetWindowStart: user.passwordResetWindowStart }),
+      },
+      data: {
+        otpAttempts: { increment: 1 },
+        ...(inWindow
+          ? { passwordResetFailedCount: { increment: 1 } }
+          : { passwordResetWindowStart: new Date(), passwordResetSentCount: 0, passwordResetFailedCount: 1 }),
+      },
+    });
+    if (!claimed) {
+      await prisma.user.updateMany({ where: { id: user.id, otp: user.otp }, data: clearedOtp });
+      return res.status(429).json({
+        success: false,
+        message: 'Too many incorrect codes. Please try again later.',
+        code: 'OTP_ATTEMPTS_EXCEEDED',
+      });
+    }
+
     if (result !== 'ok') {
-      if (result === 'invalid' && user.otpPurpose === 'reset_password') {
-        await prisma.user.update({ where: { id: user.id }, data: failedAttempt(user) });
-      }
+      // The last allowed guess for this code was wrong: burn it.
+      await prisma.user.updateMany({
+        where: { id: user.id, otp: user.otp, otpAttempts: { gte: MAX_OTP_ATTEMPTS } },
+        data: clearedOtp,
+      });
       return res.status(400).json({
         success: false,
         message: otpErrorMessage(result),
@@ -913,6 +967,7 @@ export const resetPassword = async (req: Request, res: Response) => {
         data: {
           password: hashedPassword,
           ...clearedOtp, // Clear OTP after a successful reset
+          ...resetBudgetCleared,
         },
       }),
       prisma.refreshToken.deleteMany({

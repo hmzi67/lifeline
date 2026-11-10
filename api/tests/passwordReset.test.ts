@@ -1,7 +1,7 @@
 export {};
 
 const mockPrisma: any = {
-  user: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+  user: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn(async () => ({ count: 1 })) },
   refreshToken: { deleteMany: jest.fn() },
   $transaction: jest.fn(async (ops: unknown[]) => ops),
 };
@@ -47,7 +47,7 @@ describe('password reset', () => {
   });
 
   it('finds the account case-insensitively, like the request that issued the code', async () => {
-    mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'user-1', email: 'eve@example.test', otpPurpose: 'reset_password' });
+    mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'user-1', email: 'eve@example.test', otp: '123456', otpPurpose: 'reset_password', otpAttempts: 0, passwordResetFailedCount: 0, passwordResetWindowStart: new Date() });
     const res = createResponse();
 
     await resetPassword({ body: { email: ' Eve@Example.TEST ', otp: '123456', newPassword: 'NewPass123!' } } as any, res);
