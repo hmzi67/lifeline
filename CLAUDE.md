@@ -58,7 +58,7 @@ npm run build:check        # tsc -b && vite build
 npm run lint
 ```
 
-Note: `admin` has no test script and `client`/`admin` builds differ in whether they type-check — use `type-check`/`build:check` explicitly when you need to verify types without a full asset build.
+Both `client` and `admin` run Vitest (`npm test`); component tests opt into jsdom with a `// @vitest-environment jsdom` first line. `client`/`admin` builds differ in whether they type-check — use `type-check`/`build:check` explicitly when you need to verify types without a full asset build.
 
 ## Architecture
 
