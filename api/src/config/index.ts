@@ -22,7 +22,10 @@ const envSchema = z.object({
   EMAIL_PASS: z.string().optional(),
   UPLOAD_PATH: z.string().default('uploads/'),
   RATE_LIMIT_WINDOW_MS: z.string().transform(Number).default(900000),
-  RATE_LIMIT_MAX_REQUESTS: z.string().transform(Number).default(100),
+  // Per client IP per window, for every /api route. 1000 per 15 minutes is the intended production
+  // value: the app makes a dozen calls per screen and mobile carriers put many users behind one IP.
+  // Sign-in, one-time-code, upload and food-scan routes have their own, much stricter limits.
+  RATE_LIMIT_MAX_REQUESTS: z.string().transform(Number).default(1000),
   BCRYPT_ROUNDS: z.string().transform(Number).default(12),
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
   LOG_FILE: z.string().default('logs/app.log'),

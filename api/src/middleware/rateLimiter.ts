@@ -4,7 +4,7 @@ import { config } from '../config/index.js';
 
 const rateLimiter = rateLimit({
     windowMs: config.rateLimitWindowMs || 15 * 60 * 1000,
-    max: config.rateLimitMaxRequests || 100,
+    max: config.rateLimitMaxRequests || 1000,
     message: {
         success: false,
         error: {
