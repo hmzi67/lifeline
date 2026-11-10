@@ -60,7 +60,7 @@ const request = async () => {
 };
 const guess = async (otp: string) => {
   const res = createResponse();
-  await resetPassword({ body: { email: 'eve@example.test', otp, newPassword: 'NewPass123!' } } as any, res);
+  await resetPassword({ body: { email: 'eve@example.test', otp, newPassword: 'NewPass1234!' } } as any, res);
   return res;
 };
 const wrongCode = () => (row.otp === '000000' ? '111111' : '000000');

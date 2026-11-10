@@ -17,6 +17,7 @@ import {
   verifyAppleIdentityToken,
 } from '../services/appleIdentityService.js';
 import { encryptAppleToken, exchangeAppleAuthorizationCode } from '../services/appleTokenService.js';
+import { PASSWORD_MIN_LENGTH, PASSWORD_TOO_SHORT } from '../utils/passwordPolicy.js';
 
 // JWT Payload interfaces
 interface JWTPayload {
@@ -36,7 +37,7 @@ const signupSchema = z.object({
   email: z.string().email('Please provide a valid email address'),
   username: z.string().min(1, 'Username is required').optional(),
   name: z.string().min(1, 'Name is required').optional(),
-  password: z.string().min(8, 'Password must be at least 8 characters long'),
+  password: z.string().min(PASSWORD_MIN_LENGTH, PASSWORD_TOO_SHORT),
 });
 
 const loginSchema = z.object({
@@ -905,10 +906,10 @@ export const resetPassword = async (req: Request, res: Response) => {
       });
     }
 
-    if (newPassword.length < 8) {
+    if (String(newPassword).length < PASSWORD_MIN_LENGTH) {
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 8 characters long',
+        message: PASSWORD_TOO_SHORT,
       });
     }
 

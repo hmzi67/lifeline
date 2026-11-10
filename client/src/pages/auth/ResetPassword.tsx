@@ -69,8 +69,8 @@ const ResetPassword: React.FC = () => {
       setError("Please enter the OTP sent to your email.");
       return;
     }
-    if (!password || password.length < 8) {
-      setError("Password must be at least 8 characters long.");
+    if (!password || password.length < 12) {
+      setError("Password must be at least 12 characters long.");
       return;
     }
     if (password !== confirmPassword) {
@@ -110,7 +110,7 @@ const ResetPassword: React.FC = () => {
 
   const getPasswordStrength = (password: string) => {
     const criteria = [
-      password.length >= 8,
+      password.length >= 12,
       /[A-Z]/.test(password),
       /[a-z]/.test(password),
       /[0-9]/.test(password),
@@ -348,7 +348,7 @@ const ResetPassword: React.FC = () => {
                       </div>
                       <div className="text-xs space-y-1">
                         <div className={`${passwordStrength.criteria[0] ? "text-green-600" : "text-gray-400"}`}>
-                          ✓ At least 8 characters
+                          ✓ At least 12 characters
                         </div>
                         <div className={`${passwordStrength.criteria[1] ? "text-green-600" : "text-gray-400"}`}>
                           ✓ One uppercase letter
@@ -407,7 +407,7 @@ const ResetPassword: React.FC = () => {
                 <Button
                   type="submit"
                   size="lg"
-                  disabled={loading || otp.length < 4 || password.length < 8 || password !== confirmPassword}
+                  disabled={loading || otp.length < 4 || password.length < 12 || password !== confirmPassword}
                   className="w-full bg-primary-500 hover:bg-primary-600 disabled:bg-gray-300 disabled:text-gray-500 text-white rounded-xl font-semibold transition-all duration-200 transform hover:scale-[1.02] disabled:scale-100"
                 >
                   {loading ? (
