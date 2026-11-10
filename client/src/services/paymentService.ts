@@ -110,25 +110,10 @@ class PaymentService {
    */
   async getSubscriptionStatus() {
     try {
-      const response = await api.get("/subscriptions/status");
+      const response = await api.get("/subscription/status");
       return response.data;
     } catch (error) {
       console.error("Error fetching subscription status:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Cancel subscription
-   */
-  async cancelSubscription(subscriptionId: string) {
-    try {
-      const response = await api.post("/subscriptions/cancel", {
-        subscriptionId,
-      });
-      return response.data;
-    } catch (error) {
-      console.error("Error canceling subscription:", error);
       throw error;
     }
   }
