@@ -5,8 +5,8 @@ WORKDIR /app
 # Copy package files first for better caching
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install exactly what package-lock.json pins (fails if it is out of date)
+RUN npm ci
 
 # Copy source code
 COPY . .

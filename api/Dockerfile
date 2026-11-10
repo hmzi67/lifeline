@@ -10,8 +10,8 @@ RUN apt-get update && apt-get install -y openssl
 # Copy package files first (better caching)
 COPY package*.json ./
 
-# Install dependencies (NO build here)
-RUN npm install
+# Install exactly what package-lock.json pins (fails if it is out of date); no build here
+RUN npm ci
 
 # Copy full source code (IMPORTANT: Prisma schema must exist before generate)
 COPY . .
@@ -23,7 +23,7 @@ RUN npx prisma generate
 RUN npm run build
 
 # Runtime is production: errors-only logs, secure session cookie, generic error bodies.
-# Set after the build so npm install above still gets dev dependencies.
+# Set after the build so npm ci above still gets dev dependencies.
 ENV NODE_ENV=production
 
 # Create runtime directories
