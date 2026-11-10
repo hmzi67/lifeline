@@ -1,4 +1,4 @@
-import { checkOtp, clearedOtp, failedAttempt, issueOtp, MAX_OTP_ATTEMPTS, OTP_TTL_MS } from '../src/services/otpService';
+import { burnedOtp, checkOtp, failedAttempt, issueOtp, MAX_OTP_ATTEMPTS, OTP_TTL_MS, otpErrorMessage } from '../src/services/otpService';
 
 const now = new Date('2026-10-20T10:00:00Z');
 
@@ -26,10 +26,24 @@ describe('otpService', () => {
     expect(checkOtp({ ...user, otpExpiresAt: null }, user.otp, 'reset_password', now)).toBe('expired');
   });
 
-  it('locks after too many wrong guesses and burns the code on the last one', () => {
-    const user = issueOtp('reset_password', now);
-    expect(checkOtp({ ...user, otpAttempts: MAX_OTP_ATTEMPTS }, user.otp, 'reset_password', now)).toBe('locked');
-    expect(failedAttempt({ ...user, otpAttempts: 0 })).toEqual({ otpAttempts: 1 });
-    expect(failedAttempt({ ...user, otpAttempts: MAX_OTP_ATTEMPTS - 1 })).toEqual(clearedOtp);
+  it('burns the code on the last wrong guess and then says to request a new one', () => {
+    const issued = issueOtp('verify_email', now);
+    let user: any = { ...issued };
+    for (let i = 0; i < MAX_OTP_ATTEMPTS; i++) {
+      expect(checkOtp(user, '000000', 'verify_email', now)).toBe('invalid');
+      user = { ...user, ...failedAttempt(user) };
+    }
+    expect(user).toMatchObject(burnedOtp);
+    // Even the right code no longer works, and the reply says why.
+    expect(checkOtp(user, issued.otp, 'verify_email', now)).toBe('locked');
+    expect(otpErrorMessage('locked')).toBe('Too many incorrect attempts. Please request a new code.');
+    // A fresh code starts over.
+    const fresh = { ...user, ...issueOtp('verify_email', now) };
+    expect(checkOtp(fresh, fresh.otp, 'verify_email', now)).toBe('ok');
+  });
+
+  it('keeps a burned code for one purpose from locking the other', () => {
+    const burned = { ...issueOtp('verify_email', now), ...burnedOtp };
+    expect(checkOtp(burned, '123456', 'reset_password', now)).toBe('invalid');
   });
 });

@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { config } from '../config/index.js';
 import { sendEmailVerificationEmail, sendPasswordResetEmail } from '../services/emailService.js';
 import { isSuspended } from '../utils/accountAccess.js';
-import { checkOtp, clearedOtp, failedAttempt, issueOtp, MAX_OTP_ATTEMPTS, otpErrorMessage } from '../services/otpService.js';
+import { burnedOtp, checkOtp, clearedOtp, failedAttempt, isLastAttempt, issueOtp, MAX_OTP_ATTEMPTS, otpErrorMessage } from '../services/otpService.js';
 import { claimResetSend, RESET_DAILY_FAILURES, resetBudgetCleared, resetWindowOpen } from '../services/passwordResetBudget.js';
 import {
   AppleIdentityConfigurationError,
@@ -339,12 +339,14 @@ export const verify = async (req: Request, res: Response) => {
 
     const result = checkOtp(user, otp, 'verify_email');
     if (result !== 'ok') {
-      if (result === 'invalid' && user.otpPurpose === 'verify_email') {
+      const burnsCode = result === 'invalid' && user.otpPurpose === 'verify_email' && !!user.otp;
+      if (burnsCode) {
         await prisma.user.update({ where: { id: user.id }, data: failedAttempt(user) });
       }
       return res.status(400).json({
         success: false,
-        message: otpErrorMessage(result),
+        // The guess that uses up the last attempt already gets the "request a new code" reply.
+        message: otpErrorMessage(burnsCode && isLastAttempt(user) ? 'locked' : result),
       });
     }
 
@@ -943,13 +945,13 @@ export const resetPassword = async (req: Request, res: Response) => {
 
     if (result !== 'ok') {
       // The last allowed guess for this code was wrong: burn it.
-      await prisma.user.updateMany({
+      const { count: burned } = await prisma.user.updateMany({
         where: { id: user.id, otp: user.otp, otpAttempts: { gte: MAX_OTP_ATTEMPTS } },
-        data: clearedOtp,
+        data: burnedOtp,
       });
       return res.status(400).json({
         success: false,
-        message: otpErrorMessage(result),
+        message: otpErrorMessage(burned ? 'locked' : result),
       });
     }
 
