@@ -16,7 +16,7 @@ import {
 } from '../controllers/userController.js';
 import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
-import { mediaUpload, getMediaCategory } from '../middleware/upload.js';
+import { imageUpload, mediaUpload, getMediaCategory } from '../middleware/upload.js';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 
 const userRoute = Router();
@@ -35,7 +35,7 @@ const checkProfileOwnership = (req: Request, res: Response, next: NextFunction) 
 
 // Regular user routes
 userRoute.get('/profile', authenticate, getCurrentUser);
-userRoute.put('/profile/:id', authenticate, checkProfileOwnership, mediaUpload.single('file'), updateOwnProfile);
+userRoute.put('/profile/:id', authenticate, checkProfileOwnership, imageUpload.single('file'), updateOwnProfile);
 userRoute.delete('/profile/:id', authenticate, checkProfileOwnership, deleteOwnAccount);
 // Self-service account deletion — requires password (or the typed phrase for Google/Apple accounts) in the body
 userRoute.delete('/account', authenticate, deleteOwnAccount);

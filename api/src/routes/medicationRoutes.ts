@@ -10,7 +10,7 @@ import {
 import { clearIntake, getIntakesForDay, recordIntake } from '../controllers/medicationIntakeController.js';
 import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
-import { mediaUpload } from '../middleware/upload.js';
+import { imageUpload } from '../middleware/upload.js';
 
 const router = Router();
 
@@ -31,10 +31,10 @@ router.delete('/:id/intakes/:date', authenticate, clearIntake);
 router.get('/:id', authenticate, getMedicationById);
 
 // Create a new medication
-router.post('/', authenticate, mediaUpload.single('file'), createMedication);
+router.post('/', authenticate, imageUpload.single('file'), createMedication);
 
 // Update a medication
-router.put('/:id', authenticate, mediaUpload.single('file'), updateMedication);
+router.put('/:id', authenticate, imageUpload.single('file'), updateMedication);
 
 // Delete a medication
 router.delete('/:id', authenticate, deleteMedication);
