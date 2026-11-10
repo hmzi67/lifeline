@@ -42,7 +42,6 @@ npm run seed / seed:mock / seed:full
 ```bash
 npm run dev
 npm run build            # tsc -b && vite build (type-checks first)
-npm run build:netlify     # vite build only, skips tsc
 npm run type-check
 npm run lint / lint:fix
 npm run test              # vitest

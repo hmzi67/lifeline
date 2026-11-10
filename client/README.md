@@ -1,6 +1,6 @@
 # Lifeline Frontend
 
-A modern React application built with TypeScript, Vite, and TailwindCSS. Live preview is available at [here](https://lifeline-front.netlify.app/)
+A modern React application built with TypeScript, Vite, and TailwindCSS.
 
 ## Project Structure
 
