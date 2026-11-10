@@ -1,0 +1,84 @@
+# Template for the server's docker-compose.yml (which is untracked, see .gitignore):
+#   cp docker-compose.example.yml docker-compose.yml   # then fill in .env next to it
+#
+# Secrets come from .env (see .env.example); compose refuses to start without them.
+# Only the host's TLS reverse proxy (CloudPanel/NGINX) is meant to face the internet:
+# the published ports bind to 127.0.0.1, and Postgres is not published at all.
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: lifeline_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lifeline}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-lifeline}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # No ports: only the api container reaches it, over lifeline_network. For a manual
+    # session use `docker compose exec postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB"`.
+    networks:
+      - lifeline_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lifeline} -d ${POSTGRES_DB:-lifeline}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: lifeline_api
+    # JWT, Stripe, email and OAuth settings (see api/.env.example).
+    env_file:
+      - ./api/.env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      # The mobile app's API hostname is proxied here by the host's TLS proxy.
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./api/uploads:/app/uploads
+      - ./api/logs:/app/logs
+    networks:
+      - lifeline_network
+    restart: unless-stopped
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        # VITE_API_URL omitted: the build falls back to same-origin /api, which this
+        # container's nginx proxies to the api service.
+        - VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY:-}
+    container_name: lifeline_client
+    ports:
+      - "127.0.0.1:5173:80"
+    networks:
+      - lifeline_network
+    restart: unless-stopped
+
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    container_name: lifeline_admin
+    ports:
+      - "127.0.0.1:5174:80"
+    networks:
+      - lifeline_network
+    restart: unless-stopped
+
+networks:
+  lifeline_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
