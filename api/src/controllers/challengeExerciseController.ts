@@ -1,9 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { AppError, handleError, sendResponse } from '../utils/responseHandler.js';
-
-const prisma = new PrismaClient();
 
 // ---- Validation Schemas ----
 const challengeExerciseSchema = z.object({

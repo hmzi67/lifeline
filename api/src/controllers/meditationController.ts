@@ -1,7 +1,5 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../config/database.js';
 
 /** Minutes, from the admin form: a whole number 1-600, or null to clear. undefined when not sent. */
 const parseDuration = (value: unknown): number | null | undefined => {

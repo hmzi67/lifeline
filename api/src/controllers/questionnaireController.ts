@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 
@@ -10,8 +10,6 @@ interface AuthRequest extends Request {
     roleId?: string;
   };
 }
-
-const prisma = new PrismaClient();
 
 // Validation schemas with arrays for multi-value fields
 // Same rule as the app's onboarding: users must be 18 to 75 years old.

@@ -1,10 +1,9 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { MIN_CARD_CHARGE } from './paymentController.js';
 import { partialWithoutDefaults } from '../utils/partialWithoutDefaults.js';
-
-const prisma = new PrismaClient();
 
 const pricingPlanSchema = z.object({
     name: z.string().min(1, 'Name is required').max(100),

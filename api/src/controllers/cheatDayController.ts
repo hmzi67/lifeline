@@ -1,9 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 import { getMediaCategory } from '../middleware/upload.js';
-
-const prisma = new PrismaClient();
 
 // Get all cheat days for a user
 export const getUserCheatDays = async (req: Request, res: Response): Promise<void> => {

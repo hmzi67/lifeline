@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import bcrypt from 'bcryptjs';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Request, Response } from 'express';
@@ -18,7 +18,6 @@ import {
 } from '../services/appleIdentityService.js';
 import { encryptAppleToken, exchangeAppleAuthorizationCode } from '../services/appleTokenService.js';
 
-
 // JWT Payload interfaces
 interface JWTPayload {
   userId: string;
@@ -29,8 +28,6 @@ interface JWTPayload {
 interface RefreshTokenPayload {
   userId: string;
 }
-
-const prisma = new PrismaClient();
 
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 

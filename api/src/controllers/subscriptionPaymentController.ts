@@ -1,9 +1,7 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
-
-const prisma = new PrismaClient();
 
 const createPaymentSchema = z.object({
   userId: z.string().min(1, 'User ID is required'),

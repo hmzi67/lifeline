@@ -1,7 +1,5 @@
 import { createHash } from 'node:crypto';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../config/database.js';
 
 export const findActiveLicense = (userId: string, now = new Date()) =>
   prisma.userLicense.findFirst({

@@ -1,8 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
-
-const prisma = new PrismaClient();
 
 // Get user's favorite meditations
 export const getUserFavoriteMeditations = async (req: Request, res: Response): Promise<void> => {

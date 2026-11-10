@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
-
-const prisma = new PrismaClient();
 
 interface CompleteExerciseBody {
   userId?: string;

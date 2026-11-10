@@ -1,12 +1,10 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import Stripe from 'stripe';
 import { z } from 'zod';
 import { handleChallengePaymentIntent } from '../services/challengePaymentService.js';
 import { applyDiscount, CouponError, findUsableCoupon, recordCouponUsage } from '../services/couponService.js';
 import { findActiveAppStoreLicense } from '../services/subscriptionAccessService.js';
-
-const prisma = new PrismaClient();
 
 let stripeClient: Stripe | null = null;
 

@@ -1,6 +1,4 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../config/database.js';
 
 async function main() {
   const result = await prisma.exercisePlanSchedule.deleteMany({});

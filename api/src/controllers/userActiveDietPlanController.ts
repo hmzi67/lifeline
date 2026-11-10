@@ -1,7 +1,6 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
-
-const prisma = new PrismaClient();
 
 /** The user's current plan: the one not ended. A unique index keeps it to one per user. */
 const openPlanWhere = (userId: string) => ({ userId, endedAt: null });

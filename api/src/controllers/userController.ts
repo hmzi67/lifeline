@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import bcrypt from 'bcryptjs';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
@@ -9,8 +9,6 @@ import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 import { isSuspended } from '../utils/accountAccess.js';
 import { generateTokens } from './authController.js';
 import { isValidTimeZone } from '../services/missedActivityReminders.js';
-
-const prisma = new PrismaClient();
 
 const USER_SETTINGS_DEFAULTS = {
   theme: 'system',

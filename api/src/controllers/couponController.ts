@@ -1,11 +1,9 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 import { CouponError, findUsableCoupon } from '../services/couponService.js';
 import { partialWithoutDefaults } from '../utils/partialWithoutDefaults.js';
-
-const prisma = new PrismaClient();
 
 // ─── Validation Schemas ────────────────────────────────────────────────────────
 

@@ -3,7 +3,10 @@ import { logger } from '../utils/logger.js';
 import {NextFunction, Request, Response} from "express";
 
 
-export const prisma = new PrismaClient()
+// The one Prisma client for the whole API: import this rather than constructing another,
+// since each client opens its own connection pool. Size the pool with connection_limit
+// (and pool_timeout) on DATABASE_URL.
+export const prisma = new PrismaClient();
 
 // Public contract marker lets deployment checks reject an older API artifact.
 export const API_CONTRACT_VERSION = '2026-10-24.routines-weight.v1';

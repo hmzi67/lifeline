@@ -1,8 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import { z } from 'zod';
-
-const prisma = new PrismaClient();
 
 const contentSchema = z.object({
   exerciseIds: z.array(z.string().trim().min(1)).max(100).optional(),

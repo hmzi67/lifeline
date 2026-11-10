@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import bcrypt from 'bcryptjs';
-
-const prisma = new PrismaClient();
 
 const image = (id: string) => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=900&q=80`;
 const audio = (name: string) => `https://example.com/audio/${name}.mp3`;

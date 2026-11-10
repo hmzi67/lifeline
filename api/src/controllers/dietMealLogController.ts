@@ -1,8 +1,7 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
 
-const prisma = new PrismaClient();
 const prismaClient = prisma as any;
 
 const getAuthenticatedUserId = (req: Request): string | null => {

@@ -1,9 +1,7 @@
 // controllers/blog.controller.ts
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
-
-const prisma = new PrismaClient();
 
 // Blog authors and commenters are shown publicly: never include the full user
 // row (password hash, email, phone, one-time codes, store tokens).

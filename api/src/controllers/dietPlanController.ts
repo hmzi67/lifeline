@@ -1,9 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config/index.js';
-
-const prisma = new PrismaClient();
 
 interface DietPlanQuery {
   query?: string;
