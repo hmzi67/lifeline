@@ -36,7 +36,7 @@ const RETAINED_DATA = [
 ];
 
 const DeleteAccount: React.FC = () => {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, user, logout, setUser, setToken } = useAuth();
 
   const [email, setEmail] = useState(user?.email ?? "");
   const [password, setPassword] = useState("");
@@ -88,8 +88,8 @@ const DeleteAccount: React.FC = () => {
 
       // Drop any local session belonging to the account we just removed.
       if (isAuthenticated) {
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
+        setToken(null);
+        setUser(null);
       }
     } catch (err: any) {
       setError(
