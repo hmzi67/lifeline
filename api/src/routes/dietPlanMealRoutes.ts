@@ -8,6 +8,8 @@ import {
 } from '../controllers/dietPlanMealController.js';
 import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { dietPlanMealBody } from '../validators/contentSchemas.js';
 
 const router = Router();
 
@@ -18,10 +20,10 @@ router.get('/day/:dayId', getDietPlanMeals);
 router.get('/:id', getDietPlanMealById);
 
 // POST /api/diet-plan-meals - Create diet plan meal
-router.post('/', authenticate, authorize(['admin']), createDietPlanMeal);
+router.post('/', authenticate, authorize(['admin']), validateBody(dietPlanMealBody), createDietPlanMeal);
 
 // PUT /api/diet-plan-meals/:id - Update diet plan meal
-router.put('/:id', authenticate, authorize(['admin']), updateDietPlanMeal);
+router.put('/:id', authenticate, authorize(['admin']), validateBody(dietPlanMealBody), updateDietPlanMeal);
 
 // DELETE /api/diet-plan-meals/:id - Delete diet plan meal
 router.delete('/:id', authenticate, authorize(['admin']), deleteDietPlanMeal);

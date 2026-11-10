@@ -50,9 +50,13 @@ const COVERED_ROUTERS = [
   'userFavoriteExercisePlanRoutes', 'userFavoriteMeditationRoutes', 'userWaterGoalRoutes',
   'userExerciseProgressRoutes', 'userActiveDietPlanRoutes', 'userActiveExercisePlanRoutes',
   'userDietPlanRoutes', 'userExerciseRoutes', 'foodScanRoutes', 'inAppPurchaseRoutes', 'weightLogRoutes',
+  'dietPlanRoutes', 'dietPlanDayRoutes', 'dietPlanMealRoutes', 'exerciseRoutes', 'exerciseDetailRoutes',
+  'exercisePlanRoutes', 'exercisePlanScheduleRoutes', 'exercisePlanWeekRoutes', 'mealTypeRoutes',
+  'meditationRoutes', 'meditationSessionRoutes', 'sleepSoundRoutes', 'sleepStoryRoutes', 'roleRoutes',
+  'appSettingRoutes', 'blogRoutes',
 ];
 // Write routes that take no body, or whose handler validates it with its own zod schema.
-const NO_BODY_OR_OWN_SCHEMA = /\b(recordIntake|toggleMedicationReminder|markAllNotificationsRead|markNotificationRead|pause\w+|resume\w+|end\w+)\b/;
+const NO_BODY_OR_OWN_SCHEMA = /\b(recordIntake|toggleMedicationReminder|markAllNotificationsRead|markNotificationRead|pause\w+|resume\w+|end\w+|saveDietPlanSchedule|saveExercisePlanSchedule)\b/;
 
 describe('body schema coverage', () => {
   it.each(COVERED_ROUTERS)('%s validates the body of every write route', (name) => {

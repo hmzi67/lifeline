@@ -2,23 +2,25 @@ import { Router } from 'express';
 import { AppSettingController } from '../controllers/appSettingController.js';
 import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { appSettingBody, appSettingsBulkBody } from '../validators/contentSchemas.js';
 
 const router = Router();
 
 // Create a new app setting
-router.post('/', authenticate, authorize(['admin']), AppSettingController.createAppSetting);
+router.post('/', authenticate, authorize(['admin']), validateBody(appSettingBody), AppSettingController.createAppSetting);
 
 // Get all app settings with optional pagination and filtering
 router.get('/', AppSettingController.getAllAppSettings);
 
 // Bulk upsert app settings
-router.post('/bulk-upsert', authenticate, authorize(['admin']), AppSettingController.bulkUpsertAppSettings);
+router.post('/bulk-upsert', authenticate, authorize(['admin']), validateBody(appSettingsBulkBody), AppSettingController.bulkUpsertAppSettings);
 
 // Get app setting by ID
 router.get('/:id', AppSettingController.getAppSettingById);
 
 // Update app setting by ID
-router.put('/:id', authenticate, authorize(['admin']), AppSettingController.updateAppSetting);
+router.put('/:id', authenticate, authorize(['admin']), validateBody(appSettingBody), AppSettingController.updateAppSetting);
 
 // Delete app setting by ID
 router.delete('/:id', authenticate, authorize(['admin']), AppSettingController.deleteAppSetting);

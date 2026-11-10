@@ -10,6 +10,8 @@ import {
 import { getDietPlanSchedule, saveDietPlanSchedule } from '../controllers/dietPlanScheduleController.js';
 import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
+import { validateBody } from '../middleware/validateRequest.js';
+import { dietPlanBody } from '../validators/contentSchemas.js';
 
 const router = Router();
 
@@ -29,10 +31,10 @@ router.get('/:id/schedule', authenticate, authorize(['admin']), getDietPlanSched
 router.put('/:id/schedule', authenticate, authorize(['admin']), saveDietPlanSchedule);
 
 // POST /api/diet-plans - Create new diet plan
-router.post('/', authenticate, authorize(['admin']), createDietPlan);
+router.post('/', authenticate, authorize(['admin']), validateBody(dietPlanBody), createDietPlan);
 
 // PUT /api/diet-plans/:id - Update diet plan
-router.put('/:id', authenticate, authorize(['admin']), updateDietPlan);
+router.put('/:id', authenticate, authorize(['admin']), validateBody(dietPlanBody), updateDietPlan);
 
 // DELETE /api/diet-plans/:id - Delete diet plan
 router.delete('/:id', authenticate, authorize(['admin']), deleteDietPlan);
