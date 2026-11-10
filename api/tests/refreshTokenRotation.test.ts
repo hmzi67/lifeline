@@ -17,11 +17,12 @@ jest.mock('@prisma/client', () => ({
   PrismaClient: jest.fn(() => mockPrisma),
 }));
 
-const { refreshToken } = require('../src/controllers/authController') as typeof import('../src/controllers/authController');
+const { refreshToken, generateTokens } = require('../src/controllers/authController') as typeof import('../src/controllers/authController');
 
 const createResponse = () => {
   const response: any = { statusCode: 0, body: undefined };
   response.cookie = jest.fn(() => response);
+  response.clearCookie = jest.fn(() => response);
   response.set = jest.fn(() => response);
   response.status = jest.fn((code: number) => {
     response.statusCode = code;
@@ -80,15 +81,31 @@ describe('refresh token rotation', () => {
     expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
   });
 
-  it('retires the previous token once its replacement is used', async () => {
+  it('keeps the previous token one generation as a tripwire and retires the ones before it', async () => {
     const tokenB = jwt.sign({ userId: 'user-1' }, process.env.JWT_REFRESH_SECRET!, { expiresIn: '7d', jwtid: 'b' });
-    mockPrisma.refreshToken.findFirst.mockResolvedValueOnce({ id: 'b', replacedById: null, user });
+    mockPrisma.refreshToken.findFirst
+      .mockResolvedValueOnce({ id: 'b', replacedById: null, user }) // the presented token
+      .mockResolvedValueOnce({ id: 'a' }); // the token b replaced
     mockPrisma.refreshToken.create.mockResolvedValue({ id: 'c', token: 'token-c' });
 
     const response = await refreshWith(tokenB);
 
     expect(response.statusCode).toBe(200);
-    expect(mockPrisma.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { replacedById: 'b' } });
+    expect(mockPrisma.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { replacedById: 'a' } });
+    expect(mockPrisma.refreshToken.deleteMany).not.toHaveBeenCalledWith({ where: { replacedById: 'b' } });
+  });
+
+  it('ends every session when a token is replayed after its replacement was used', async () => {
+    mockPrisma.refreshToken.findFirst
+      .mockResolvedValueOnce({ id: 'a', replacedById: 'b', user })
+      .mockResolvedValueOnce({ id: 'b', token: 'token-b', replacedById: 'c' });
+
+    const response = await refreshWith(tokenA);
+
+    expect(response.statusCode).toBe(401);
+    expect(response.body.code).toBe('REFRESH_TOKEN_REUSED');
+    expect(mockPrisma.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 'user-1' } });
+    expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
   });
 
   it('hands both racing refreshes the same replacement', async () => {
@@ -112,5 +129,12 @@ describe('refresh token rotation', () => {
     const response = await refreshWith(tokenA);
 
     expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('access token lifetime', () => {
+  it('defaults to 15 minutes', () => {
+    const { exp, iat } = jwt.decode(generateTokens('user-1', 'user@example.com').accessToken) as { exp: number; iat: number };
+    expect(exp - iat).toBe(15 * 60);
   });
 });

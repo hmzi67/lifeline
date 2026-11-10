@@ -49,8 +49,9 @@ export const generateTokens = (userId: string, email: string, roleId?: string) =
   const accessToken = jwt.sign(
     { userId, email, roleId },
     config.jwt.secret,
-    // An hour, so most app opens need no refresh (each refresh is a chance to lose its reply).
-    { expiresIn: '1h' }
+    // Short-lived (JWT_EXPIRES_IN, 15m by default): a leaked access token is soon useless,
+    // and refresh resends a lost replacement, so frequent refreshes cannot strand a client.
+    { expiresIn: config.jwt.expiresIn as jwt.SignOptions['expiresIn'] }
   );
 
   // jwtid keeps two refresh tokens issued in the same second distinct (token is @unique)
@@ -628,12 +629,25 @@ export const refreshToken = async (req: Request, res: Response) => {
     // Rotate without ever stranding the client: the presented token stays valid until
     // its replacement is first used, which proves the client received it.
     const now = new Date();
-    let replacement = storedToken.replacedById
+    const existing = storedToken.replacedById
       ? await prisma.refreshToken.findFirst({
           where: { id: storedToken.replacedById, expiresAt: { gt: now } },
-          select: { id: true, token: true },
+          select: { id: true, token: true, replacedById: true },
         })
       : null;
+
+    // Reuse detection: this token's replacement has itself been used, so the client already
+    // moved past this token. Presenting it again means it was copied: end every session.
+    if (existing?.replacedById) {
+      await prisma.refreshToken.deleteMany({ where: { userId: storedToken.user.id } });
+      res.clearCookie('refreshToken');
+      return res.status(401).json({
+        success: false,
+        message: 'This session is no longer valid. Please sign in again.',
+        code: 'REFRESH_TOKEN_REUSED',
+      });
+    }
+    let replacement: { id: string; token: string } | null = existing;
 
     // No replacement yet (or it expired): issue one. When the token already has an unused
     // replacement, the reply carrying it was lost or two refreshes raced, so it is sent again.
@@ -674,8 +688,10 @@ export const refreshToken = async (req: Request, res: Response) => {
       });
     }
 
-    // Using this token proves the client received it, so the token it replaced can go.
-    await prisma.refreshToken.deleteMany({ where: { replacedById: storedToken.id } });
+    // Using this token proves the client received it. The token it replaced is kept one more
+    // generation as the reuse tripwire above; the ones before that can go.
+    const parent = await prisma.refreshToken.findFirst({ where: { replacedById: storedToken.id }, select: { id: true } });
+    if (parent) await prisma.refreshToken.deleteMany({ where: { replacedById: parent.id } });
 
     const { accessToken } = generateTokens(
       storedToken.user.id,
