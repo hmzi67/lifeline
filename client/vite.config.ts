@@ -14,4 +14,8 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    // Source maps would publish the original source; keep them out of production builds.
+    sourcemap: false,
+  },
 });
