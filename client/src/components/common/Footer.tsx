@@ -121,6 +121,12 @@ export default function Footer() {
               >
                 Cookies
               </Link>
+              <Link
+                to="/copyright"
+                className="text-white hover:text-white/80 transition-colors duration-200 text-sm sm:text-base"
+              >
+                Copyright
+              </Link>
             </div>
           </div>
         </div>

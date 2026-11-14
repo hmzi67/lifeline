@@ -30,6 +30,7 @@ const Error = lazy(() => import('./pages/utility/Error'));
 const PrivacyPolicy = lazy(() => import('./pages/legal/PrivacyPolicy'));
 const TermsAndConditions = lazy(() => import('./pages/legal/TermsAndConditions'));
 const CookiePolicy = lazy(() => import('./pages/legal/CookiePolicy'));
+const CopyrightPolicy = lazy(() => import('./pages/legal/CopyrightPolicy'));
 const CommingSoon = lazy(() => import('./pages/utility/CommingSoon'));
 const Profile = lazy(() => import('./pages/auth/Profile'));
 const DeleteAccount = lazy(() => import('./pages/legal/DeleteAccount'));
@@ -60,6 +61,7 @@ function App() {
               <Route path="/terms" element={<TermsAndConditions />} />
               <Route path="/cookies" element={<CookiePolicy />} />
               <Route path="/cookie-policy" element={<CookiePolicy />} />
+              <Route path="/copyright" element={<CopyrightPolicy />} />
               <Route path="/coming-soon" element={<CommingSoon />} />
               {/* Public account-deletion page — required by the Play Store listing */}
               <Route path="/delete-account" element={<DeleteAccount />} />

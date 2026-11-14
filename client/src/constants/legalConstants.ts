@@ -405,3 +405,64 @@ export const COOKIE_POLICY_DATA: LegalPageData = {
   ],
   contact: LEGAL_CONTACT,
 };
+
+export const COPYRIGHT_POLICY_DATA: LegalPageData = {
+  title: "Copyright Policy",
+  lastUpdated: LEGAL_LAST_UPDATED,
+  introduction: `This Copyright Policy explains who owns the content in the LifeLine mobile application ("App") and associated web services (e.g., makelifeline.com), how you may use it, and how to report material you believe infringes your copyright. It is operated by Lifeline Dev Pvt Ltd ("Company", "we", "us", or "our").`,
+  sections: [
+    {
+      id: "copyright-ownership",
+      title: "1. Copyright Ownership",
+      content: `Unless otherwise stated, all content in the App and on our websites, including software, text, workout and diet plans, meditation audio, videos, images, graphics, logos, and UI design, is owned by or licensed to Lifeline Dev Pvt Ltd and is protected by copyright and other intellectual property laws.`,
+      outro: `© Lifeline Dev Pvt Ltd. All rights reserved.`,
+    },
+    {
+      id: "permitted-use",
+      title: "2. Permitted Use",
+      content: `You may view and use our content for your own personal, non-commercial purposes through the App and website. Without our prior written permission, you may not:`,
+      items: [
+        { text: "Copy, reproduce, republish, or redistribute our content." },
+        { text: "Sell, license, or otherwise commercially exploit our content." },
+        { text: "Modify or create derivative works from our content." },
+        { text: "Remove or alter any copyright, trademark, or other proprietary notices." },
+      ],
+      link: { to: "/terms", label: "See our Terms & Conditions" },
+    },
+    {
+      id: "third-party-content",
+      title: "3. Third-Party Content & Trademarks",
+      content: `Some content, names, and logos belong to third parties (for example, Google, Google Play, and Health Connect) and are used under licence or for identification only. They remain the property of their respective owners.`,
+    },
+    {
+      id: "reporting-infringement",
+      title: "4. Reporting Copyright Infringement",
+      content: `We respect the intellectual property of others. If you believe content available through LifeLine infringes your copyright, please send a written notice to the email address below that includes:`,
+      items: [
+        { text: "Your full name, address, phone number, and email address." },
+        { text: "A description of the copyrighted work you claim has been infringed." },
+        { text: "The location of the allegedly infringing material (for example, a URL or the screen in the App)." },
+        { text: "A statement that you have a good-faith belief that the use is not authorised by the copyright owner, its agent, or the law." },
+        { text: "A statement that the information in your notice is accurate and that you are the copyright owner or authorised to act on the owner's behalf." },
+        { text: "Your physical or electronic signature." },
+      ],
+      note: `Submitting a knowingly false or misleading infringement notice may expose you to legal liability.`,
+    },
+    {
+      id: "our-response",
+      title: "5. How We Respond",
+      content: `On receiving a complete notice, we will review it and may remove or disable access to the material, notify the person who provided it, and, where appropriate, suspend or terminate the accounts of repeat infringers.`,
+    },
+    {
+      id: "changes-to-copyright-policy",
+      title: "6. Changes to This Policy",
+      content: `We may update this policy from time to time. Any changes will be reflected by a new "Last Updated" date at the top of this page.`,
+    },
+    {
+      id: "copyright-contact",
+      title: "7. Contact Us",
+      content: `To send a copyright notice or ask about using our content, please contact us:`,
+    },
+  ],
+  contact: LEGAL_CONTACT,
+};
