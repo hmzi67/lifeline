@@ -2,3 +2,7 @@
 # never built into the image.
 *firebase-adminsdk*.json
 firebase-service-account*.json
+
+# Installed inside the image by npm ci; a host copy must never overwrite it.
+node_modules
+dist
