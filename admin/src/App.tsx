@@ -15,6 +15,7 @@ const DietComponent = lazy(() => import('@/components/pages/DietComponent'));
 const MealTypeComponent = lazy(() => import('@/components/pages/MealTypeComponent'));
 const ExerciseComponent = lazy(() => import('@/components/pages/ExerciseComponent'));
 const ExercisePlanComponent = lazy(() => import('@/components/pages/ExercisePlanComponent'));
+const AiGeneratorComponent = lazy(() => import('@/components/pages/AiGeneratorComponent'));
 const AnnouncementComponent = lazy(() => import('@/components/pages/AnnouncementComponent'));
 const ChallengeComponent = lazy(() => import('@/components/pages/ChallengeComponent'));
 const MeditationComponent = lazy(() => import('@/components/pages/MeditationComponent'));
@@ -61,6 +62,8 @@ const AdminLayout: React.FC = () => {
                 return <ExerciseComponent />;
             case 'exercisePlans':
                 return <ExercisePlanComponent />;
+            case 'aiGenerator':
+                return <AiGeneratorComponent />;
             case 'challenges':
                 return <ChallengeComponent />;
             case 'mindMeditation':

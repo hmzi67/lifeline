@@ -2,6 +2,7 @@ import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { AppError, handleError, sendResponse } from '../utils/responseHandler.js';
+import { PUBLISHED_ONLY, isPublished } from '../utils/contentStatus.js';
 
 // ---- Validation Schemas ----
 const challengeExerciseSchema = z.object({
@@ -110,7 +111,7 @@ export const addExerciseToChallenge = async (
     if (!challenge) throw new AppError('Challenge not found', 404);
 
     const exercise = await prisma.exercise.findUnique({ where: { id: exerciseId } });
-    if (!exercise) throw new AppError('Exercise not found', 404);
+    if (!exercise || !isPublished(exercise)) throw new AppError('Exercise not found', 404);
 
     const challengeExercise = await prisma.challengeExercise.create({
       data: { challengeId, exerciseId },
@@ -155,7 +156,7 @@ export const addMultipleExercisesToChallenge = async (
     const challenge = await prisma.challenge.findUnique({ where: { id: challengeId } });
     if (!challenge) throw new AppError('Challenge not found', 404);
 
-    const exercises = await prisma.exercise.findMany({ where: { id: { in: exerciseIds } } });
+    const exercises = await prisma.exercise.findMany({ where: { id: { in: exerciseIds }, ...PUBLISHED_ONLY } });
     if (exercises.length !== exerciseIds.length) {
       const foundIds = exercises.map((e) => e.id);
       const missingIds = exerciseIds.filter((id) => !foundIds.includes(id));

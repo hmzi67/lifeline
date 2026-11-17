@@ -686,6 +686,11 @@ const resolveNotificationUserId = async (
  */
 export const handleAppStoreNotification = async (
   signedPayload: string,
+  /** Handles products that are not subscriptions; returns null to leave the notification to this service. */
+  handleOneTimePurchase?: (
+    transaction: JWSTransactionDecodedPayload,
+    notificationType: string | null,
+  ) => Promise<{ handled: boolean; reason: string } | null>,
 ): Promise<AppStoreNotificationResult> => {
   const { environment, value: notification } = await verifyWithFallback(
     verifier => verifier.verifyAndDecodeNotification(signedPayload),
@@ -704,6 +709,9 @@ export const handleAppStoreNotification = async (
   const { value: transaction } = await verifyWithFallback(
     verifier => verifier.verifyAndDecodeTransaction(data.signedTransactionInfo!),
   );
+  const oneTimePurchase = await handleOneTimePurchase?.(transaction, notificationType);
+  if (oneTimePurchase) return { notificationType, ...oneTimePurchase };
+
   const renewalInfo = data.signedRenewalInfo
     ? (await verifyWithFallback(
         verifier => verifier.verifyAndDecodeRenewalInfo(data.signedRenewalInfo!),

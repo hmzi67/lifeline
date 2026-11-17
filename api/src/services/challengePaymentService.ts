@@ -91,6 +91,38 @@ const finalizeFee = async (feeId: string) => {
   return joined.fee;
 };
 
+/**
+ * Reverses a refunded fee: the fee is marked REFUNDED and the user leaves the challenge
+ * it paid for. Safe to call more than once; only the first call changes anything.
+ */
+const refundFee = async (feeId: string) => {
+  const refunded = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.challengeFee.updateMany({
+      where: { id: feeId, status: { not: 'REFUNDED' } },
+      data: { status: 'REFUNDED' },
+    });
+    const fee = await tx.challengeFee.findUnique({ where: { id: feeId } });
+    if (!fee) throw new ChallengePaymentError('Payment not found', 404);
+    if (count === 0) return { fee, removed: false };
+
+    const { count: removed } = await tx.userChallenge.deleteMany({ where: { feeId } });
+    return { fee, removed: removed > 0 };
+  });
+
+  if (refunded.removed && refunded.fee.userId) {
+    const challenge = refunded.fee.challengeId
+      ? await prisma.challenge.findUnique({ where: { id: refunded.fee.challengeId }, select: { name: true } })
+      : null;
+    await notifyUser(refunded.fee.userId, {
+      type: 'challenge',
+      title: 'Challenge payment refunded',
+      body: `Your payment for "${challenge?.name ?? 'a challenge'}" was refunded, so you are no longer in that challenge.`,
+      data: { challengeId: refunded.fee.challengeId },
+    });
+  }
+  return refunded.fee;
+};
+
 // ---------------------------------------------------------------- Stripe (Android)
 
 export const startStripeCheckout = async (stripe: Stripe, challengeId: string, userId: string) => {
@@ -166,7 +198,11 @@ export const startAppleCheckout = async (challengeId: string, userId: string) =>
   const pending = await prisma.challengeFee.findFirst({
     where: { userId, challengeId, method: 'apple', status: 'PENDING' },
   });
-  if (!pending) {
+  if (pending) {
+    // The purchase is matched to the newest pending fee for its product, so going back to
+    // a challenge after opening another one of the same length must make this one newest again.
+    await prisma.challengeFee.update({ where: { id: pending.id }, data: { createdAt: new Date() } });
+  } else {
     await prisma.challengeFee.create({
       data: { userId, challengeId, amount: pricing.price, method: 'apple', status: 'PENDING' },
     });
@@ -182,14 +218,59 @@ export const startAppleCheckout = async (challengeId: string, userId: string) =>
 export const isChallengeProductId = (productId: string | undefined | null) =>
   !!productId && /^challenge_\d+_days$/.test(productId);
 
-/** Verifies a StoreKit transaction for a challenge product and joins the matching challenge. */
-export const recordApplePurchase = async (userId: string, signedTransaction: string) => {
+/**
+ * Keeps a paid purchase that no challenge is waiting for (the challenge was removed or its
+ * price changed after checkout started). The user is told, and the fee stays on record as
+ * UNMATCHED so support can refund it or add the user to a challenge by hand.
+ */
+const recordUnmatchedPurchase = async (userId: string, transactionId: string, productId: string) => {
+  const days = Number(/^challenge_(\d+)_days$/.exec(productId)?.[1] ?? 0);
+  try {
+    const fee = await prisma.challengeFee.create({
+      data: {
+        userId,
+        amount: days * DEFAULT_DAILY_FEE,
+        method: 'apple',
+        status: 'UNMATCHED',
+        providerReference: transactionId,
+        paidAt: new Date(),
+      },
+    });
+    console.error(`Challenge purchase ${transactionId} (${productId}) by user ${userId} matches no pending challenge`);
+    await notifyUser(userId, {
+      type: 'challenge',
+      title: 'Challenge payment received',
+      body: 'We received your payment, but that challenge is no longer available, so you were not added to it. '
+        + 'You can ask Apple for a refund at reportaproblem.apple.com.',
+    });
+    return fee;
+  } catch (error) {
+    // A concurrent request recorded the same transaction first.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      const winner = await prisma.challengeFee.findUnique({ where: { providerReference: transactionId } });
+      if (winner) return winner;
+    }
+    throw error;
+  }
+};
+
+/**
+ * Verifies a StoreKit transaction for a challenge product and joins the matching challenge.
+ *
+ * Returns the fee whenever the purchase has been dealt with, so the app can finish the
+ * transaction: PAID (joined), REFUNDED, or UNMATCHED (paid, but no challenge to join).
+ * It throws only when the app should keep the transaction and try again later.
+ */
+export const recordApplePurchase = async (
+  userId: string,
+  signedTransaction: string,
+): Promise<{ challengeId: string | null; status: string | null }> => {
   const transaction = await verifySignedTransaction(signedTransaction);
   const transactionId = transaction.transactionId;
-  if (!transactionId || !isChallengeProductId(transaction.productId)) {
+  const productId = transaction.productId;
+  if (!transactionId || !productId || !isChallengeProductId(productId)) {
     throw new ChallengePaymentError('This is not a challenge purchase', 400);
   }
-  if (transaction.revocationDate) throw new ChallengePaymentError('This purchase was refunded', 400);
 
   const token = await getOrCreateAppAccountToken(userId);
   if (transaction.appAccountToken && transaction.appAccountToken.toLowerCase() !== token.toLowerCase()) {
@@ -198,11 +279,17 @@ export const recordApplePurchase = async (userId: string, signedTransaction: str
 
   // Already recorded: StoreKit redelivers unfinished transactions.
   const recorded = await prisma.challengeFee.findUnique({ where: { providerReference: transactionId } });
+  if (recorded && recorded.userId !== userId) {
+    throw new ChallengePaymentError('This purchase belongs to a different Lifeline account', 409);
+  }
+
+  // Apple refunded it: nothing to join, and anything it paid for is taken back.
+  if (transaction.revocationDate) {
+    return recorded ? refundFee(recorded.id) : { challengeId: null, status: 'REFUNDED' };
+  }
+
   if (recorded) {
-    if (recorded.userId !== userId) {
-      throw new ChallengePaymentError('This purchase belongs to a different Lifeline account', 409);
-    }
-    return finalizeFee(recorded.id);
+    return recorded.challengeId && recorded.status !== 'REFUNDED' ? finalizeFee(recorded.id) : recorded;
   }
 
   const pendingFees = await prisma.challengeFee.findMany({
@@ -213,7 +300,7 @@ export const recordApplePurchase = async (userId: string, signedTransaction: str
   const fee = pendingFees.find(
     (candidate) => candidate.challenge && challengePricing(candidate.challenge).appleProductId === transaction.productId,
   );
-  if (!fee) throw new ChallengePaymentError('No challenge is waiting for this purchase', 404);
+  if (!fee) return recordUnmatchedPurchase(userId, transactionId, productId);
 
   try {
     await prisma.challengeFee.update({ where: { id: fee.id }, data: { providerReference: transactionId } });
@@ -226,4 +313,25 @@ export const recordApplePurchase = async (userId: string, signedTransaction: str
     throw error;
   }
   return finalizeFee(fee.id);
+};
+
+/**
+ * App Store Server Notifications for challenge purchases. Returns null for other products
+ * (subscriptions). A refund takes the user back out of the challenge.
+ */
+export const handleAppleChallengeNotification = async (
+  transaction: { productId?: string; transactionId?: string },
+  notificationType: string | null,
+): Promise<{ handled: boolean; reason: string } | null> => {
+  if (!isChallengeProductId(transaction.productId)) return null;
+  if (notificationType !== 'REFUND' || !transaction.transactionId) {
+    return { handled: false, reason: 'challenge_purchase' };
+  }
+
+  const fee = await prisma.challengeFee.findUnique({ where: { providerReference: transaction.transactionId } });
+  // Not recorded yet: the app reports the refunded transaction itself when it next syncs.
+  if (!fee) return { handled: false, reason: 'unknown_challenge_purchase' };
+
+  await refundFee(fee.id);
+  return { handled: true, reason: 'challenge_refunded' };
 };

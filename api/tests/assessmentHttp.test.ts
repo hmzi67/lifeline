@@ -75,7 +75,8 @@ beforeAll(async () => {
   await new Promise<void>(resolve => server.once('listening', resolve));
   base = `http://127.0.0.1:${(server.address() as any).port}`;
   process.env.EXPO_PUBLIC_API_URL = base + '/api';
-  (global as any).__DEV__ = false;
+  // Development mode: release builds of the app refuse a plain-http API, and this server is http on loopback.
+  (global as any).__DEV__ = true;
   mobileApi = require('../../../services/api');
   MobileAuth = require('../../../services/authService').AuthService;
 });

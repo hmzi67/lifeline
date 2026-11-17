@@ -10,7 +10,7 @@ const mockPrisma: any = {
     findFirst: jest.fn(),
     findMany: jest.fn(),
   },
-  userChallenge: { findFirst: jest.fn(), create: jest.fn() },
+  userChallenge: { findFirst: jest.fn(), create: jest.fn(), deleteMany: jest.fn() },
   $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(mockPrisma)),
 };
 
@@ -38,8 +38,10 @@ jest.mock('../src/services/notificationService', () => ({
 const {
   challengePricing,
   confirmStripeCheckout,
+  handleAppleChallengeNotification,
   handleChallengePaymentIntent,
   recordApplePurchase,
+  startAppleCheckout,
   startStripeCheckout,
 } = require('../src/services/challengePaymentService') as typeof import('../src/services/challengePaymentService');
 
@@ -80,7 +82,9 @@ beforeEach(() => {
     return fee;
   });
   mockPrisma.challengeFee.updateMany.mockImplementation(async ({ where, data }: any) => {
-    const fee = fees.find((f) => f.id === where.id && f.status !== 'PAID');
+    const statusMatches = (status: string) =>
+      typeof where.status === 'string' ? status === where.status : status !== where.status.not;
+    const fee = fees.find((f) => f.id === where.id && statusMatches(f.status));
     if (!fee) return { count: 0 };
     Object.assign(fee, data);
     return { count: 1 };
@@ -92,6 +96,13 @@ beforeEach(() => {
     fees.filter((f) => f.status === 'PENDING' && f.method === 'apple' && !f.providerReference)
       .map((f) => ({ ...f, challenge: openChallenge() })),
   );
+  mockPrisma.challengeFee.findFirst.mockImplementation(async ({ where }: any) =>
+    fees.find((f) => f.userId === where.userId && f.challengeId === where.challengeId
+      && f.method === where.method && f.status === where.status) ?? null,
+  );
+  mockPrisma.userChallenge.create.mockReset();
+  mockPrisma.userChallenge.deleteMany.mockReset().mockResolvedValue({ count: 1 });
+  mockNotifyUser.mockReset();
   mockGetOrCreateAppAccountToken.mockResolvedValue('token-user-1');
 });
 
@@ -198,5 +209,82 @@ describe('App Store purchase', () => {
     await expect(recordApplePurchase('user-1', 'jws')).rejects.toMatchObject({ statusCode: 400 });
 
     expect(mockPrisma.userChallenge.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps a paid purchase that no challenge is waiting for, and tells the user', async () => {
+    mockVerifySignedTransaction.mockResolvedValue(transaction({ transactionId: 'tx-orphan' }));
+    mockPrisma.challengeFee.findMany.mockResolvedValueOnce([]);
+
+    const first = await recordApplePurchase('user-1', 'jws');
+
+    expect(first).toMatchObject({ status: 'UNMATCHED', providerReference: 'tx-orphan', amount: 7 });
+    expect(mockPrisma.userChallenge.create).not.toHaveBeenCalled();
+    expect(mockNotifyUser).toHaveBeenCalledTimes(1);
+
+    // Redelivered: answered the same way, without a second record or message.
+    const again = await recordApplePurchase('user-1', 'jws');
+    expect(again).toMatchObject({ status: 'UNMATCHED' });
+    expect(fees.filter((f) => f.providerReference === 'tx-orphan')).toHaveLength(1);
+    expect(mockNotifyUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes the user out of the challenge when a recorded purchase is refunded', async () => {
+    mockVerifySignedTransaction.mockResolvedValue(transaction());
+    await recordApplePurchase('user-1', 'jws');
+
+    mockVerifySignedTransaction.mockResolvedValue(transaction({ revocationDate: Date.now() }));
+    const refunded = await recordApplePurchase('user-1', 'jws');
+
+    expect(refunded).toMatchObject({ status: 'REFUNDED' });
+    expect(mockPrisma.userChallenge.deleteMany).toHaveBeenCalledWith({ where: { feeId: 'fee-1' } });
+  });
+
+  it('does not join on a purchase that was refunded before it was recorded', async () => {
+    mockVerifySignedTransaction.mockResolvedValue(transaction({ revocationDate: Date.now() }));
+
+    await expect(recordApplePurchase('user-1', 'jws')).resolves.toMatchObject({ status: 'REFUNDED' });
+    expect(mockPrisma.userChallenge.create).not.toHaveBeenCalled();
+    expect(fees[0].status).toBe('PENDING');
+  });
+
+  it('makes the challenge being paid for the newest pending fee again', async () => {
+    const before = fees[0].createdAt;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    await startAppleCheckout('challenge-1', 'user-1');
+
+    expect(fees).toHaveLength(1);
+    expect(fees[0].createdAt.getTime()).toBeGreaterThan(before.getTime());
+  });
+});
+
+describe('App Store refund notifications', () => {
+  beforeEach(async () => {
+    await mockPrisma.challengeFee.create({
+      data: { userId: 'user-1', challengeId: 'challenge-1', amount: 7, method: 'apple', status: 'PENDING' },
+    });
+    mockVerifySignedTransaction.mockResolvedValue({
+      transactionId: 'tx-1', productId: 'challenge_7_days', appAccountToken: 'token-user-1',
+    });
+    await recordApplePurchase('user-1', 'jws');
+  });
+
+  it('refunds the fee and removes the user once, however often Apple sends it', async () => {
+    const notification = { productId: 'challenge_7_days', transactionId: 'tx-1' };
+
+    expect(await handleAppleChallengeNotification(notification, 'REFUND'))
+      .toEqual({ handled: true, reason: 'challenge_refunded' });
+    await handleAppleChallengeNotification(notification, 'REFUND');
+
+    expect(fees[0].status).toBe('REFUNDED');
+    expect(mockPrisma.userChallenge.deleteMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves subscriptions and non-refund notifications alone', async () => {
+    expect(await handleAppleChallengeNotification({ productId: 'lifeline_vip_monthly', transactionId: 'tx-9' }, 'REFUND'))
+      .toBeNull();
+    expect(await handleAppleChallengeNotification({ productId: 'challenge_7_days', transactionId: 'tx-1' }, 'ONE_TIME_CHARGE'))
+      .toEqual({ handled: false, reason: 'challenge_purchase' });
+    expect(fees[0].status).toBe('PAID');
   });
 });

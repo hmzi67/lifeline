@@ -1,6 +1,7 @@
 import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
+import { isPublished } from '../utils/contentStatus.js';
 
 // Enough of the plan for the Favourites screen; the schedule is only read to count exercises.
 const PLAN_SELECT = {
@@ -73,8 +74,8 @@ export const addFavoriteExercisePlan = async (req: Request, res: Response): Prom
   }
 
   try {
-    const plan = await prisma.exercisePlan.findUnique({ where: { id: planId }, select: { id: true } });
-    if (!plan) {
+    const plan = await prisma.exercisePlan.findUnique({ where: { id: planId }, select: { id: true, status: true } });
+    if (!plan || !isPublished(plan)) {
       res.status(404).json({ success: false, message: 'Exercise plan not found' });
       return;
     }

@@ -1,5 +1,6 @@
 import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
+import { isPublished } from '../utils/contentStatus.js';
 
 // Get user's active exercise plan
 export const getUserActiveExercisePlan = async (req: Request, res: Response): Promise<void> => {
@@ -110,7 +111,7 @@ export const startActiveExercisePlan = async (req: Request, res: Response): Prom
       where: { id: planId }
     });
 
-    if (!plan) {
+    if (!plan || !isPublished(plan)) {
       res.status(404).json({
         success: false,
         message: 'Exercise plan not found'

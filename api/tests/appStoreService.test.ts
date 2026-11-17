@@ -376,6 +376,24 @@ describe('App Store Server Notifications V2', () => {
     }));
   });
 
+  it('hands one-time purchases to their own handler instead of treating them as subscriptions', async () => {
+    signTransaction('jws-challenge', { productId: 'challenge_7_days', transactionId: 'tx-challenge' });
+    const signed = signNotification('notification-refund', {
+      notificationType: 'REFUND',
+      data: { signedTransactionInfo: 'jws-challenge' },
+    });
+    const handleOneTimePurchase = jest.fn(async () => ({ handled: true, reason: 'challenge_refunded' }));
+
+    const result = await handleAppStoreNotification(signed, handleOneTimePurchase);
+
+    expect(handleOneTimePurchase).toHaveBeenCalledWith(
+      expect.objectContaining({ productId: 'challenge_7_days', transactionId: 'tx-challenge' }),
+      'REFUND',
+    );
+    expect(result).toEqual({ handled: true, notificationType: 'REFUND', reason: 'challenge_refunded' });
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('falls back to the appAccountToken for a first purchase', async () => {
     signTransaction('jws-first');
     mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-one' });

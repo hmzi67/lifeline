@@ -66,7 +66,9 @@ interface PlanForm {
 
 // The app sorts a week's workouts by these names.
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
+// Stored lowercase (the app and the AI generator use these keys); shown capitalized.
+const LEVELS = ['beginner', 'intermediate', 'advanced'];
+const levelLabel = (level: string | null | undefined) => (level ? level.charAt(0).toUpperCase() + level.slice(1).toLowerCase() : '');
 
 const emptyForm = (): PlanForm => ({ name: '', description: '', level: '', weeks: '4', imageFile: null, imagePreview: '' });
 
@@ -150,7 +152,7 @@ const ExercisePlanComponent: React.FC = () => {
         setForm({
             name: plan.name || '',
             description: plan.description || '',
-            level: plan.level || '',
+            level: (plan.level || '').toLowerCase(),
             weeks: String(plan.durationWeeks || Math.max(1, ...(plan.exercisePlanWeeks || []).map(w => w.weekNumber))),
             imageFile: null,
             imagePreview: plan.image || '',
@@ -392,12 +394,12 @@ const ExercisePlanComponent: React.FC = () => {
                                                 </div>
                                             )}
                                             <div>
-                                                <div className="text-sm font-semibold text-gray-900">{plan.name}</div>
+                                                <div className="text-sm font-semibold text-gray-900">{plan.name}{(plan as { status?: string }).status === 'draft' && <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold align-middle" title="Made by the AI generator; publish it from AI Generator">DRAFT</span>}</div>
                                                 {plan.description && <div className="text-xs text-gray-400 line-clamp-1 max-w-xs">{plan.description}</div>}
                                             </div>
                                         </div>
                                     </td>
-                                    <td className="px-5 py-4 text-sm text-gray-700">{plan.level || '—'}</td>
+                                    <td className="px-5 py-4 text-sm text-gray-700">{levelLabel(plan.level) || '—'}</td>
                                     <td className="px-5 py-4 text-sm text-gray-700">{plan.durationWeeks ?? plan.exercisePlanWeeks?.length ?? '—'}</td>
                                     <td className="px-5 py-4">
                                         <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold ${workoutCount(plan) ? 'bg-teal-100 text-teal-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -438,11 +440,35 @@ const ExercisePlanComponent: React.FC = () => {
                     <div className="p-3 space-y-2">
                         {rows.map((row, index) => (
                             <div key={row.key} className="grid grid-cols-12 gap-2 items-center">
-                                <div className="col-span-12 md:col-span-5">
+                                <div className="col-span-12 md:col-span-5 flex items-center gap-2">
+                                    {(() => {
+                                        const picture = exercises.find(ex => ex.id === row.exerciseId)?.image;
+                                        return (
+                                            <div className="w-9 h-9 flex-shrink-0 rounded-md overflow-hidden bg-gray-100 flex items-center justify-center">
+                                                {picture ? (
+                                                    <a href={picture} target="_blank" rel="noreferrer" title="Open picture">
+                                                        <img src={picture} alt="" className="w-9 h-9 object-cover" />
+                                                    </a>
+                                                ) : (
+                                                    <ImageIcon className="w-4 h-4 text-gray-400" />
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
                                     <Select value={row.exerciseId} onValueChange={v => changeRow(day, row.key, 'exerciseId', v)}>
-                                        <SelectTrigger className="h-9"><SelectValue placeholder="Pick an exercise" /></SelectTrigger>
+                                        <SelectTrigger className="h-9 flex-1">
+                                            {/* Name only: the row already shows the picture next to the dropdown. */}
+                                            <SelectValue placeholder="Pick an exercise">{exercises.find(ex => ex.id === row.exerciseId)?.name}</SelectValue>
+                                        </SelectTrigger>
                                         <SelectContent>
-                                            {exercises.map(ex => <SelectItem key={ex.id} value={ex.id}>{ex.name}</SelectItem>)}
+                                            {exercises.map(ex => (
+                                                <SelectItem key={ex.id} value={ex.id}>
+                                                    <span className="flex items-center gap-2">
+                                                        {ex.image ? <img src={ex.image} alt="" className="w-5 h-5 rounded object-cover" /> : <span className="w-5 h-5 rounded bg-gray-100" />}
+                                                        {ex.name}
+                                                    </span>
+                                                </SelectItem>
+                                            ))}
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -500,7 +526,7 @@ const ExercisePlanComponent: React.FC = () => {
                             <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Level</Label>
                             <Select value={form.level} onValueChange={v => setForm(f => ({ ...f, level: v }))}>
                                 <SelectTrigger><SelectValue placeholder="Select level" /></SelectTrigger>
-                                <SelectContent>{LEVELS.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}</SelectContent>
+                                <SelectContent>{LEVELS.map(l => <SelectItem key={l} value={l}>{levelLabel(l)}</SelectItem>)}</SelectContent>
                             </Select>
                         </div>
                         <div className="space-y-1.5">

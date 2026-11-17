@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database.js';
 import { cursorArgs, cursorPage } from '../utils/pagination.js';
+import { isPublished } from '../utils/contentStatus.js';
 
 interface AssignExerciseBody {
   userId: string;
@@ -180,7 +181,7 @@ export const assignExerciseToUser = async (req: Request<{}, {}, AssignExerciseBo
       where: { id: exerciseId }
     });
 
-    if (!exercise) {
+    if (!exercise || !isPublished(exercise)) {
       res.status(404).json({
         success: false,
         message: 'Exercise not found'
@@ -282,7 +283,7 @@ export const updateUserExercise = async (req: Request<{ id: string }, {}, Update
         where: { id: exerciseId }
       });
 
-      if (!exercise) {
+      if (!exercise || !isPublished(exercise)) {
         res.status(404).json({
           success: false,
           message: 'Exercise not found'

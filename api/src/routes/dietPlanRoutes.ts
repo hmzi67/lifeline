@@ -12,17 +12,19 @@ import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
 import { validateBody } from '../middleware/validateRequest.js';
 import { dietPlanBody } from '../validators/contentSchemas.js';
+// Lets the admin panel's token see drafts; app users only ever see published rows.
+import detectAdmin from '../middleware/detectAdmin.js';
 
 const router = Router();
 
 // GET /api/diet-plans - Get all diet plans
-router.get('/', getAllDietPlans);
+router.get('/', detectAdmin, getAllDietPlans);
 
 // GET /api/diet-plans/search - Search diet plans
-router.get('/search', searchDietPlans);
+router.get('/search', detectAdmin, searchDietPlans);
 
 // GET /api/diet-plans/:id - Get diet plan by ID
-router.get('/:id', getDietPlanById);
+router.get('/:id', detectAdmin, getDietPlanById);
 
 // GET /api/diet-plans/:id/schedule - Days and meals of a plan (admin editor)
 router.get('/:id/schedule', authenticate, authorize(['admin']), getDietPlanSchedule);

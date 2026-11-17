@@ -1,11 +1,13 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database.js';
 import { cursorArgs, cursorPage } from '../utils/pagination.js';
+import { canSee, visibleTo } from '../utils/contentStatus.js';
 
 // Get all exercise plans
 export const getAllExercisePlans = async (req: Request, res: Response): Promise<void> => {
   try {
     const exercisePlansPage = await prisma.exercisePlan.findMany({
+      where: visibleTo(req),
       ...cursorArgs(req.query),
       orderBy: { id: 'asc' },
       include: {
@@ -66,7 +68,7 @@ export const getExercisePlanById = async (req: Request, res: Response): Promise<
       }
     });
 
-    if (!exercisePlan) {
+    if (!exercisePlan || !canSee(req, exercisePlan)) {
       res.status(404).json({
         success: false,
         message: 'Exercise plan not found'

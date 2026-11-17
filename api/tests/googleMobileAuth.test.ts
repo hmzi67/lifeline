@@ -121,6 +121,18 @@ describe('Google mobile authentication', () => {
     expect(verifyIdToken).not.toHaveBeenCalled();
   });
 
+  it.each([false, undefined])('refuses a token whose email Google has not verified (email_verified=%s)', async (emailVerified) => {
+    mockGoogleToken({ email: 'victim@example.com', email_verified: emailVerified as any });
+
+    const response = createResponse();
+    await googleMobileAuth({ body: { idToken: 'unverified-email-token' } } as any, response as any);
+
+    expect(response.statusCode).toBe(401);
+    expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+  });
+
   it('rejects a token for an unconfigured audience without writing user data', async () => {
     const verifyIdToken = jest.spyOn(
       OAuth2Client.prototype,

@@ -4,6 +4,10 @@ import { config } from './config/index.js';
 import {connectDatabase, disconnectDatabase} from './config/database.js';
 import { processDueTrialCharges } from './controllers/paymentController.js';
 import { sendMissedActivityReminders } from './services/missedActivityReminders.js';
+import { LIMITS } from './services/aiGenerator/constants.js';
+import { runAiGenerationTick, setJobHandler } from './services/aiGenerator/worker.js';
+import { runPlanJob } from './services/aiGenerator/agent.js';
+import { isOpenAiConfigured } from './services/aiGenerator/openai.js';
 
 let trialChargeJobRunning = false;
 
@@ -52,6 +56,11 @@ const startServer = async () => {
 
     const missedActivityTimer = setInterval(() => void runMissedActivityJob(), 5 * 60_000);
     missedActivityTimer.unref();
+
+    // AI plan generator jobs, run by the OpenAI agent. Without a key, batches stay queued.
+    if (isOpenAiConfigured()) setJobHandler(runPlanJob);
+    const aiGenerationTimer = setInterval(() => void runAiGenerationTick(), LIMITS.workerTickMs);
+    aiGenerationTimer.unref();
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);

@@ -1,9 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../config/database.js';
+import { verifyAccessToken } from '../utils/accessToken.js';
 import { AuthenticatedRequest } from '../types/middlewareTypes.js';
-import { config } from '../config/index.js';
 import { accountAccessDenial } from '../utils/accountAccess.js';
+import { isMobileAppRequest, MOBILE_ADMIN_DENIAL } from '../utils/adminRole.js';
 
 interface JWTPayload {
   userId: string;
@@ -36,7 +37,7 @@ const authenticate = async (req: Request, res: Response, next: NextFunction) => 
     }
 
     // Verify the JWT token
-    const decoded = jwt.verify(token, config.jwt.secret) as JWTPayload;
+    const decoded = verifyAccessToken(token) as JWTPayload;
 
     // Optional: Verify user still exists in database
     const user = await prisma.user.findUnique({
@@ -63,6 +64,11 @@ const authenticate = async (req: Request, res: Response, next: NextFunction) => 
       return res.status(403).json({ success: false, ...denial });
     }
 
+    // Admin accounts manage content in the admin panel, not in the mobile app.
+    if (user.role?.name === 'admin' && isMobileAppRequest(req)) {
+      return res.status(403).json({ success: false, ...MOBILE_ADMIN_DENIAL });
+    }
+
     // Attach user information to request object
     (req as AuthenticatedRequest).user = {
       id: user.id,
@@ -73,19 +79,20 @@ const authenticate = async (req: Request, res: Response, next: NextFunction) => 
 
     next();
   } catch (error) {
-    if (error instanceof jwt.JsonWebTokenError) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid authentication token',
-        code: 'INVALID_TOKEN',
-      });
-    }
-
+    // TokenExpiredError extends JsonWebTokenError, so it must be checked first.
     if (error instanceof jwt.TokenExpiredError) {
       return res.status(401).json({
         success: false,
         message: 'Authentication token has expired',
         code: 'TOKEN_EXPIRED',
+      });
+    }
+
+    if (error instanceof jwt.JsonWebTokenError) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid authentication token',
+        code: 'INVALID_TOKEN',
       });
     }
 

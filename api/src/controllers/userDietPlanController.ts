@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database.js';
 import { cursorArgs, cursorPage } from '../utils/pagination.js';
+import { isPublished } from '../utils/contentStatus.js';
 
 interface AssignDietPlanBody {
   userId: string;
@@ -173,7 +174,7 @@ export const assignDietPlanToUser = async (req: Request<{}, {}, AssignDietPlanBo
       where: { id: dietId }
     });
 
-    if (!dietPlan) {
+    if (!dietPlan || !isPublished(dietPlan)) {
       res.status(404).json({
         success: false,
         message: 'Diet plan not found'
@@ -275,7 +276,7 @@ export const updateUserDietPlan = async (req: Request<{ id: string }, {}, Update
         where: { id: dietId }
       });
 
-      if (!dietPlan) {
+      if (!dietPlan || !isPublished(dietPlan)) {
         res.status(404).json({
           success: false,
           message: 'Diet plan not found'

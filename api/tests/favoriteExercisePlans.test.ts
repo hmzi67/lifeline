@@ -62,7 +62,7 @@ describe('favourite exercise plans', () => {
   });
 
   it('adds a plan idempotently', async () => {
-    mockPrisma.exercisePlan.findUnique.mockResolvedValue({ id: 'plan-1' });
+    mockPrisma.exercisePlan.findUnique.mockResolvedValue({ id: 'plan-1', status: 'published' });
     mockPrisma.userFavoriteExercisePlan.upsert.mockResolvedValue(favoriteRow);
     const res = mockResponse();
 

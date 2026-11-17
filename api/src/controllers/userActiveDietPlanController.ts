@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
+import { isPublished } from '../utils/contentStatus.js';
 
 /** The user's current plan: the one not ended. A unique index keeps it to one per user. */
 const openPlanWhere = (userId: string) => ({ userId, endedAt: null });
@@ -101,7 +102,7 @@ export const startActiveDietPlan = async (req: Request, res: Response): Promise<
       where: { id: dietId }
     });
 
-    if (!diet) {
+    if (!diet || !isPublished(diet)) {
       res.status(404).json({
         success: false,
         message: 'Diet plan not found'

@@ -21,7 +21,8 @@ import {
     TrendingUp,
     CheckCircle,
     CalendarDays,
-    Bell
+    Bell,
+    Sparkles
 } from 'lucide-react';
 import type { NavigationItem, StatData, DashboardData } from '@/types';
 
@@ -33,6 +34,7 @@ export const navigationItems: NavigationItem[] = [
     { id: 'mealTypes', label: 'Meal Types', icon: Utensils },
     { id: 'exercise', label: 'Exercises', icon: Dumbbell },
     { id: 'exercisePlans', label: 'Exercise Plans', icon: CalendarDays },
+    { id: 'aiGenerator', label: 'AI Generator', icon: Sparkles },
     { id: 'challenges', label: 'Challenges', icon: Target },
     { id: 'mindMeditation', label: 'Meditation', icon: Music },
     { id: 'sleepStories', label: 'Sleep Stories', icon: BookOpen },

@@ -62,12 +62,12 @@ authRoute.post('/reset-password', otpLimiter, validateBody(resetPasswordBody), r
 // Verification route
 authRoute.post('/resend-verification', otpLimiter, validateBody(emailBody), resendVerificationEmail)
 authRoute.post('/verify', otpLimiter, validateBody(verifyEmailBody), verify)
-authRoute.get('/check-verification', checkVerificationStatus)
+authRoute.get('/check-verification', otpLimiter, checkVerificationStatus)
 
 // OAuth routes
 authRoute.get('/google', googleAuth);
 authRoute.get('/google/callback', googleAuthCallback);
-authRoute.post('/google/mobile', validateBody(googleMobileBody), googleMobileAuth); // Mobile Google authentication
+authRoute.post('/google/mobile', otpLimiter, validateBody(googleMobileBody), googleMobileAuth); // Mobile Google authentication
 authRoute.get('/apple', appleAuth);
 // POST /apple/callback is mounted in app.ts, before CORS.
 authRoute.post('/apple/mobile', authLimiter, validateBody(appleMobileBody), appleMobileAuth); // Mobile Apple authentication

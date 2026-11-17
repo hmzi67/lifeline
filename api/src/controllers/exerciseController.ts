@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database.js';
 import { cursorArgs, cursorPage } from '../utils/pagination.js';
+import { canSee, visibleTo } from '../utils/contentStatus.js';
 
 interface ExerciseQuery {
   query?: string;
@@ -34,6 +35,7 @@ interface UpdateExerciseBody {
 export const getAllExercises = async (req: Request, res: Response): Promise<void> => {
   try {
     const exercisesPage = await prisma.exercise.findMany({
+      where: visibleTo(req),
       ...cursorArgs(req.query),
       orderBy: { id: 'asc' },
       include: {
@@ -95,7 +97,7 @@ export const getExerciseById = async (req: Request, res: Response): Promise<void
       }
     });
 
-    if (!exercise) {
+    if (!exercise || !canSee(req, exercise)) {
       res.status(404).json({
         success: false,
         message: 'Exercise not found'
@@ -250,7 +252,7 @@ export const searchExercises = async (req: Request<{}, {}, {}, ExerciseQuery>, r
   try {
     const { query, purpose, duration } = req.query;
 
-    const whereClause: any = {};
+    const whereClause: any = { ...visibleTo(req) };
 
     if (query) {
       whereClause.OR = [
@@ -316,6 +318,7 @@ export const getExercisesByPurpose = async (req: Request<{ purpose: string }>, r
       ...cursorArgs(req.query),
       orderBy: { id: 'asc' },
       where: {
+        ...visibleTo(req),
         purpose: {
           contains: purpose,
           mode: 'insensitive'

@@ -1,6 +1,7 @@
 import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { verifyAccessToken } from '../utils/accessToken.js';
 import { config } from '../config/index.js';
 import { pageSize } from '../utils/pagination.js';
 
@@ -12,7 +13,7 @@ const getUserIdFromToken = (req: Request): string | null => {
   }
   const token = authHeader.substring(7);
   try {
-    const decoded = jwt.verify(token, config.jwt.secret) as {
+    const decoded = verifyAccessToken(token) as {
       userId: string;
     };
     return decoded.userId;

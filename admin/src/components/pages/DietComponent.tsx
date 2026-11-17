@@ -1533,7 +1533,7 @@ const DietComponent: React.FC = () => {
                                                             <ImageIcon className="w-5 h-5 text-gray-300" />
                                                         </div>
                                                     )}
-                                                    <span className="text-sm font-semibold text-gray-900">{plan.name}</span>
+                                                    <span className="text-sm font-semibold text-gray-900">{plan.name}{(plan as { status?: string }).status === 'draft' && <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold align-middle" title="Made by the AI generator; publish it from AI Generator">DRAFT</span>}</span>
                                                 </div>
                                             </td>
                                             <td className="px-5 py-4 whitespace-nowrap">

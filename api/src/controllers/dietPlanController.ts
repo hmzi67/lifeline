@@ -1,7 +1,9 @@
 import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { verifyAccessToken } from '../utils/accessToken.js';
 import { config } from '../config/index.js';
+import { canSee, visibleTo } from '../utils/contentStatus.js';
 
 interface DietPlanQuery {
   query?: string;
@@ -119,7 +121,7 @@ const parseUserIdFromToken = (authorizationHeader?: string): string | null => {
 
   try {
     const token = authorizationHeader.substring(7);
-    const decoded = jwt.verify(token, config.jwt.secret) as { userId?: string };
+    const decoded = verifyAccessToken(token) as { userId?: string };
     return decoded.userId || null;
   } catch {
     return null;
@@ -168,6 +170,7 @@ const getBmiCategory = (bmi: number): string => {
 export const getAllDietPlans = async (req: Request, res: Response): Promise<void> => {
   try {
     const dietPlans = await prisma.dietPlan.findMany({
+      where: visibleTo(req),
       // shortcut: personalization filters and ranks every plan in memory, so it reads at most 500 rows; page it in the database if the catalog outgrows that.
       take: 500,
       include: {
@@ -284,7 +287,7 @@ export const getDietPlanById = async (req: Request, res: Response): Promise<void
       }
     });
 
-    if (!dietPlan) {
+    if (!dietPlan || !canSee(req, dietPlan)) {
       res.status(404).json({
         success: false,
         message: 'Diet plan not found'
@@ -480,7 +483,7 @@ export const searchDietPlans = async (req: Request<{}, {}, {}, DietPlanQuery>, r
   try {
     const { query, calories, duration } = req.query;
 
-    const whereClause: any = {};
+    const whereClause: any = { ...visibleTo(req) };
 
     if (query) {
       whereClause.name = {

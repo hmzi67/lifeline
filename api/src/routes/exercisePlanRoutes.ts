@@ -11,14 +11,16 @@ import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
 import { validateBody } from '../middleware/validateRequest.js';
 import { exercisePlanBody } from '../validators/contentSchemas.js';
+// Lets the admin panel's token see drafts; app users only ever see published rows.
+import detectAdmin from '../middleware/detectAdmin.js';
 
 const router = Router();
 
 // GET /api/exercise-plans - Get all exercise plans
-router.get('/', getAllExercisePlans);
+router.get('/', detectAdmin, getAllExercisePlans);
 
 // GET /api/exercise-plans/:id - Get exercise plan by ID
-router.get('/:id', getExercisePlanById);
+router.get('/:id', detectAdmin, getExercisePlanById);
 
 // POST /api/exercise-plans - Create new exercise plan
 router.post('/', authenticate, authorize(['admin']), validateBody(exercisePlanBody), createExercisePlan);

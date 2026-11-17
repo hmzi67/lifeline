@@ -1,9 +1,8 @@
 import { Prisma } from '@prisma/client';
 import { PrismaClientInitializationError } from '@prisma/client/runtime/library';
 import { Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
+import { verifyAccessToken } from '../utils/accessToken.js';
 import { z } from 'zod';
-import { config } from '../config/index.js';
 import { prisma } from '../config/database.js';
 import { notifyUser } from '../services/notificationService.js';
 import { challengePhase, isChallengeVisible, visibleChallengeWhere } from '../services/challengeTimeline.js';
@@ -236,7 +235,7 @@ const resolveViewer = async (req: Request): Promise<Viewer> => {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) return { userId: null, isAdmin: false };
   try {
-    const { userId } = jwt.verify(header.substring(7), config.jwt.secret) as { userId?: string };
+    const { userId } = verifyAccessToken(header.substring(7)) as { userId?: string };
     if (!userId) return { userId: null, isAdmin: false };
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: { select: { name: true } } } });
     return { userId, isAdmin: user?.role?.name === 'admin' };
@@ -797,8 +796,15 @@ export const recordChallengeApplePurchase = async (req: Request, res: Response):
     const userId = requireUserId(req);
     const { signedTransaction } = applePurchaseSchema.parse(req.body);
 
+    // 200 means the purchase has been dealt with and the app can finish the transaction;
+    // `status` says how: PAID (joined), REFUNDED, or UNMATCHED (paid, no challenge to join).
     const fee = await recordApplePurchase(userId, signedTransaction);
-    sendResponse(res, 200, { challengeId: fee.challengeId, status: fee.status }, 'Successfully joined the challenge');
+    const message = fee.status === 'PAID'
+      ? 'Successfully joined the challenge'
+      : fee.status === 'REFUNDED'
+        ? 'This purchase was refunded'
+        : 'Your payment was received, but that challenge is no longer available. You can ask Apple for a refund at reportaproblem.apple.com.';
+    sendResponse(res, 200, { challengeId: fee.challengeId, status: fee.status }, message);
   } catch (err) {
     handleError(err, res);
   }

@@ -1,6 +1,7 @@
 import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
 import { z } from 'zod';
+import { PUBLISHED_ONLY } from '../utils/contentStatus.js';
 
 const contentSchema = z.object({
   exerciseIds: z.array(z.string().trim().min(1)).max(100).optional(),
@@ -29,16 +30,16 @@ export const setChallengeContent = async (req: Request, res: Response): Promise<
       return;
     }
     if (exerciseIds?.length) {
-      const found = await prisma.exercise.count({ where: { id: { in: exerciseIds } } });
+      const found = await prisma.exercise.count({ where: { id: { in: exerciseIds }, ...PUBLISHED_ONLY } });
       if (found !== exerciseIds.length) {
-        res.status(400).json({ success: false, message: 'One of the exercises no longer exists. Reload the page and try again.' });
+        res.status(400).json({ success: false, message: 'One of the exercises no longer exists or is still a draft. Reload the page and try again.' });
         return;
       }
     }
     if (dietIds?.length) {
-      const found = await prisma.dietPlan.count({ where: { id: { in: dietIds } } });
+      const found = await prisma.dietPlan.count({ where: { id: { in: dietIds }, ...PUBLISHED_ONLY } });
       if (found !== dietIds.length) {
-        res.status(400).json({ success: false, message: 'One of the diet plans no longer exists. Reload the page and try again.' });
+        res.status(400).json({ success: false, message: 'One of the diet plans no longer exists or is still a draft. Reload the page and try again.' });
         return;
       }
     }

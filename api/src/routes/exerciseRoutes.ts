@@ -12,20 +12,22 @@ import authenticate from '../middleware/authenticate.js';
 import authorize from '../middleware/authorize.js';
 import { validateBody } from '../middleware/validateRequest.js';
 import { exerciseBody } from '../validators/contentSchemas.js';
+// Lets the admin panel's token see drafts; app users only ever see published rows.
+import detectAdmin from '../middleware/detectAdmin.js';
 
 const router = Router();
 
 // GET /api/exercises - Get all exercises
-router.get('/', getAllExercises);
+router.get('/', detectAdmin, getAllExercises);
 
 // GET /api/exercises/search - Search exercises
-router.get('/search', searchExercises);
+router.get('/search', detectAdmin, searchExercises);
 
 // GET /api/exercises/purpose/:purpose - Get exercises by purpose
-router.get('/purpose/:purpose', getExercisesByPurpose);
+router.get('/purpose/:purpose', detectAdmin, getExercisesByPurpose);
 
 // GET /api/exercises/:id - Get exercise by ID
-router.get('/:id', getExerciseById);
+router.get('/:id', detectAdmin, getExerciseById);
 
 // POST /api/exercises - Create new exercise
 router.post('/', authenticate, authorize(['admin']), validateBody(exerciseBody), createExercise);

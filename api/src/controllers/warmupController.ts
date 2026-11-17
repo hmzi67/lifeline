@@ -1,5 +1,6 @@
 import { prisma } from '../config/database.js';
 import { Request, Response } from 'express';
+import { PUBLISHED_ONLY } from '../utils/contentStatus.js';
 
 const DEFAULT_AUDIO_URL = 'https://www.learningcontainer.com/wp-content/uploads/2020/02/Kalimba.mp3';
 const DEFAULT_IMAGE_URL =
@@ -9,6 +10,7 @@ export const getWarmupExercises = async (_req: Request, res: Response): Promise<
   try {
     const exercises = await prisma.exercise.findMany({
       where: {
+        ...PUBLISHED_ONLY,
         purpose: {
           contains: 'warm',
           mode: 'insensitive',

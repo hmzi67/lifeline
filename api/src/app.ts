@@ -75,6 +75,7 @@ import userFavoriteSleepItemRoutes from './routes/userFavoriteSleepItemRoutes.js
 import meditationLogRoutes from './routes/meditationLogRoutes.js';
 import adminDashboardRoutes from './routes/adminDashboardRoutes.js';
 import adminNotificationRoutes from './routes/adminNotificationRoutes.js';
+import adminAiGeneratorRoutes from './routes/adminAiGeneratorRoutes.js';
 import userRoute from './routes/userRoutes.js';
 import userWaterGoalRoutes from './routes/userWaterGoalRoutes.js';
 import waterIntakeRoutes from './routes/waterIntakeRoutes.js';
@@ -148,6 +149,7 @@ app.use('/api/auth/', authRoute);
 // Admin dashboard route
 app.use('/api/admin/dashboard', adminDashboardRoutes);
 app.use('/api/admin/notifications', adminNotificationRoutes);
+app.use('/api/admin/ai-generator', adminAiGeneratorRoutes);
 
 // media upload route
 app.use('/api/uploads', uploadRoutes);

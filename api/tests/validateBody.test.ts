@@ -66,8 +66,13 @@ const NO_BODY = [
   'pauseActiveDietPlan', 'resumeActiveDietPlan', 'endActiveDietPlan', 'pauseActiveExercisePlan', 'resumeActiveExercisePlan',
 ];
 const exempt = new RegExp(`\\b(${[...OWN_SCHEMA, ...NO_BODY].join('|')})\\b`);
-// Inline handlers: the admin broadcast parses broadcastSchema; uploads take a multipart file, not fields.
-const INLINE_EXEMPT: Record<string, string[]> = { adminNotificationRoutes: ["'/broadcast'"], uploadRoutes: ["router.post('/'"] };
+// Inline handlers: the admin broadcast parses broadcastSchema; uploads take a multipart file, not fields;
+// each AI generator route parses its own schema (createBatchSchema is a union, which validateBody can't take).
+const INLINE_EXEMPT: Record<string, string[]> = {
+  adminNotificationRoutes: ["'/broadcast'"],
+  uploadRoutes: ["router.post('/'"],
+  adminAiGeneratorRoutes: ["router.post('/batches"],
+};
 
 const routesDir = path.join(__dirname, '../src/routes');
 const routerFiles = fs.readdirSync(routesDir).filter((file) => file.endsWith('.ts'));

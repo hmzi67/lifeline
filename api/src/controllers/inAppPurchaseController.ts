@@ -6,6 +6,7 @@ import {
   handleAppStoreNotification,
   syncAppStoreTransactions,
 } from '../services/appStoreService.js';
+import { handleAppleChallengeNotification } from '../services/challengePaymentService.js';
 
 const sendServiceError = (res: Response, error: unknown) => {
   if (error instanceof AppStoreServiceError) {
@@ -92,7 +93,8 @@ export const handleAppStoreServerNotification = async (req: Request, res: Respon
   }
 
   try {
-    const outcome = await handleAppStoreNotification(signedPayload);
+    // Challenge purchases are one-time products; a refund takes the user out of the challenge.
+    const outcome = await handleAppStoreNotification(signedPayload, handleAppleChallengeNotification);
     return res.status(200).json({ received: true, ...outcome });
   } catch (error) {
     // Non-2xx responses make Apple retry the notification later.

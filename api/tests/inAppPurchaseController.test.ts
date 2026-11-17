@@ -116,7 +116,8 @@ describe('In-app purchase controller', () => {
 
     await handleAppStoreServerNotification({ body: { signedPayload: 'signed' } } as any, response);
 
-    expect(mockHandleAppStoreNotification).toHaveBeenCalledWith('signed');
+    // The second argument handles one-time (challenge) purchases, e.g. their refunds.
+    expect(mockHandleAppStoreNotification).toHaveBeenCalledWith('signed', expect.any(Function));
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({ received: true, handled: true, notificationType: 'DID_RENEW' });
   });

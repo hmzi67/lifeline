@@ -42,7 +42,7 @@ const oldPlan = { id: 'plan-old', userId: 'user-1', dietId: 'diet-old', currentD
 beforeEach(() => {
   jest.clearAllMocks();
   mockPrisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
-  mockPrisma.dietPlan.findUnique.mockResolvedValue({ id: 'diet-new' });
+  mockPrisma.dietPlan.findUnique.mockResolvedValue({ id: 'diet-new', status: 'published' });
   mockPrisma.userActiveDietPlan.create.mockResolvedValue({ id: 'plan-new', dietId: 'diet-new' });
 });
 

@@ -97,6 +97,9 @@ export const serveUploads = (): RequestHandler[] => [
       // Opening an upload directly downloads it instead of rendering it on our origin;
       // <img>, <video> and the app's media players ignore this header.
       res.setHeader('Content-Disposition', 'attachment');
+      // Uploads are shown by the admin panel, website and app, which can be on other origins
+      // (admin.* vs www.*); Helmet's default same-origin policy made browsers refuse them there.
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     },
   }),
 ];

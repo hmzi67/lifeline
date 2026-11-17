@@ -56,46 +56,47 @@ model User {
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
 
-  role                    Role?                    @relation(fields: [roleId], references: [id])
-  authTokens              AuthToken[]
-  refreshTokens           RefreshToken[]
-  oauthLoginCodes         OauthLoginCode[]
-  onboardingProgress      OnboardingProgress?
-  subscriptionPayments    SubscriptionPayment[]
-  userLicenses            UserLicense[]
-  questionnaires          Questionnaire[]
-  userDietPlans           UserDietPlan[]
-  userActiveDietPlan      UserActiveDietPlan[]
-  dietMealLogs            DietMealLog[]
-  userExercises           UserExercise[]
-  userActiveExercisePlan  UserActiveExercisePlan[]
-  userExerciseProgress    UserExerciseProgress[]
-  challengeFees           ChallengeFee[]
-  userChallenges          UserChallenge[]
-  cheatDays               CheatDay[]
-  fastingLogs             FastingLog[]
-  sleepLogs               SleepLog[]
-  waterIntakeLogs         WaterIntakeLog[]
-  userWaterGoal           UserWaterGoal[]
-  medications             Medication[]
-  medicationReminders     MedicationReminder[]
-  userDailyRoutines       UserDailyRoutine[]
-  userFavoriteMeditations UserFavoriteMeditation[]
+  role                      Role?                      @relation(fields: [roleId], references: [id])
+  authTokens                AuthToken[]
+  refreshTokens             RefreshToken[]
+  oauthLoginCodes           OauthLoginCode[]
+  onboardingProgress        OnboardingProgress?
+  subscriptionPayments      SubscriptionPayment[]
+  userLicenses              UserLicense[]
+  questionnaires            Questionnaire[]
+  userDietPlans             UserDietPlan[]
+  userActiveDietPlan        UserActiveDietPlan[]
+  dietMealLogs              DietMealLog[]
+  userExercises             UserExercise[]
+  userActiveExercisePlan    UserActiveExercisePlan[]
+  userExerciseProgress      UserExerciseProgress[]
+  challengeFees             ChallengeFee[]
+  userChallenges            UserChallenge[]
+  cheatDays                 CheatDay[]
+  fastingLogs               FastingLog[]
+  sleepLogs                 SleepLog[]
+  waterIntakeLogs           WaterIntakeLog[]
+  userWaterGoal             UserWaterGoal[]
+  medications               Medication[]
+  medicationReminders       MedicationReminder[]
+  userDailyRoutines         UserDailyRoutine[]
+  userFavoriteMeditations   UserFavoriteMeditation[]
   userFavoriteExercisePlans UserFavoriteExercisePlan[]
   userFavoriteSleepItems    UserFavoriteSleepItem[]
-  blogs                   Blog[]
-  blogComments            BlogComment[]
-  submittedChallenges     Challenge[]              @relation("SubmittedChallenges")
-  challengeReports        ChallengeReport[]        @relation("ChallengeReports")
-  createdCoupons          CouponCode[]             @relation("AdminCreatedCoupons")
-  couponUsages            CouponUsage[]
-  referralCodes           ReferralCode[]           @relation("ReferralCodeOwner")
-  referralUsages          ReferralUsage[]
-  notifications           Notification[]
-  foodLogs                FoodLog[]
-  medicationIntakes       MedicationIntake[]
-  weightLogs              WeightLog[]
-  meditationLogs          UserMeditationLog[]
+  blogs                     Blog[]
+  blogComments              BlogComment[]
+  submittedChallenges       Challenge[]                @relation("SubmittedChallenges")
+  challengeReports          ChallengeReport[]          @relation("ChallengeReports")
+  createdCoupons            CouponCode[]               @relation("AdminCreatedCoupons")
+  couponUsages              CouponUsage[]
+  referralCodes             ReferralCode[]             @relation("ReferralCodeOwner")
+  referralUsages            ReferralUsage[]
+  notifications             Notification[]
+  foodLogs                  FoodLog[]
+  medicationIntakes         MedicationIntake[]
+  weightLogs                WeightLog[]
+  meditationLogs            UserMeditationLog[]
+  aiGenerationBatches       AiGenerationBatch[]
 
   @@map("users")
 }
@@ -252,6 +253,7 @@ model UserLicense {
   @@map("user_licenses")
 }
 
+
 // ============================
 // Questionnaire Module
 // ============================
@@ -299,11 +301,17 @@ model DietPlan {
   gender             String?              @db.VarChar(20)
   /// Who the plan is for (weight_loss, weight_gain, build_muscle, ...); matched against the user's goal.
   goal               String?              @db.VarChar(50)
+  /// draft (made by the AI generator, admins only) or published (visible in the app).
+  status             String               @default("published") @db.VarChar(20)
+  /// The AI generation batch that created this row, if any.
+  aiBatchId          String?              @map("ai_batch_id")
+  aiBatch            AiGenerationBatch?   @relation(fields: [aiBatchId], references: [id], onDelete: SetNull)
   userDietPlans      UserDietPlan[]
   userActiveDietPlan UserActiveDietPlan[]
   challengeDiets     ChallengeDiet[]
   dietPlanDays       DietPlanDay[]
 
+  @@index([status])
   @@map("diet_plans")
 }
 
@@ -423,11 +431,20 @@ model Exercise {
   videoUrl             String?                @map("video_url") @db.Text
   difficulty           String?                @db.VarChar(20)
   caloriesBurnEstimate Int?                   @map("calories_burn_estimate")
+  /// Labels the AI generator's rule checks use: { position: standing|seated|floor,
+  /// impact: low|high, equipment: string[] }. Null until an exercise has been labelled.
+  tags                 Json?
+  /// draft (made by the AI generator, admins only) or published (visible in the app).
+  status               String                 @default("published") @db.VarChar(20)
+  /// The AI generation batch that created this row, if any.
+  aiBatchId            String?                @map("ai_batch_id")
+  aiBatch              AiGenerationBatch?     @relation(fields: [aiBatchId], references: [id], onDelete: SetNull)
   userExercises        UserExercise[]
   challengeExercises   ChallengeExercise[]
   exerciseDetails      ExerciseDetail[]
   exercisePlanSchedule ExercisePlanSchedule[]
 
+  @@index([status])
   @@map("exercises")
 }
 
@@ -448,16 +465,22 @@ model UserExercise {
 
 // Exercise Plans
 model ExercisePlan {
-  id                     String                   @id @default(cuid())
-  name                   String                   @db.VarChar(100)
-  description            String?                  @db.Text
-  image                  String?                  @db.Text
-  level                  String?                  @db.VarChar(20)
-  durationWeeks          Int?                     @map("duration_weeks")
+  id                     String                     @id @default(cuid())
+  name                   String                     @db.VarChar(100)
+  description            String?                    @db.Text
+  image                  String?                    @db.Text
+  level                  String?                    @db.VarChar(20)
+  durationWeeks          Int?                       @map("duration_weeks")
+  /// draft (made by the AI generator, admins only) or published (visible in the app).
+  status                 String                     @default("published") @db.VarChar(20)
+  /// The AI generation batch that created this row, if any.
+  aiBatchId              String?                    @map("ai_batch_id")
+  aiBatch                AiGenerationBatch?         @relation(fields: [aiBatchId], references: [id], onDelete: SetNull)
   exercisePlanWeeks      ExercisePlanWeek[]
   userActiveExercisePlan UserActiveExercisePlan[]
   userFavorites          UserFavoriteExercisePlan[]
 
+  @@index([status])
   @@map("exercise_plans")
 }
 
@@ -971,15 +994,15 @@ model UserDailyRoutine {
 
 // Sleep Stories Table
 model SleepStory {
-  id          String  @id @default(cuid())
-  title       String  @db.VarChar(150)
-  author      String? @db.VarChar(100)
-  description String? @db.Text
-  image       String? @db.Text
-  audioUrl    String  @map("audio_url") @db.Text
-  category    String? @db.VarChar(50)
+  id          String                  @id @default(cuid())
+  title       String                  @db.VarChar(150)
+  author      String?                 @db.VarChar(100)
+  description String?                 @db.Text
+  image       String?                 @db.Text
+  audioUrl    String                  @map("audio_url") @db.Text
+  category    String?                 @db.VarChar(50)
   duration    Int?
-  isActive    Boolean @default(true) @map("is_active")
+  isActive    Boolean                 @default(true) @map("is_active")
   favorites   UserFavoriteSleepItem[]
 
   @@map("sleep_stories")
@@ -987,14 +1010,14 @@ model SleepStory {
 
 // Sleep Sounds Table
 model SleepSound {
-  id          String  @id @default(cuid())
-  name        String  @db.VarChar(150)
-  description String? @db.Text
-  image       String? @db.Text
-  soundUrl    String  @map("sound_url") @db.Text
-  category    String? @db.VarChar(50)
+  id          String                  @id @default(cuid())
+  name        String                  @db.VarChar(150)
+  description String?                 @db.Text
+  image       String?                 @db.Text
+  soundUrl    String                  @map("sound_url") @db.Text
+  category    String?                 @db.VarChar(50)
   duration    Int?
-  isActive    Boolean @default(true) @map("is_active")
+  isActive    Boolean                 @default(true) @map("is_active")
   favorites   UserFavoriteSleepItem[]
 
   @@map("sleep_sounds")
@@ -1198,4 +1221,71 @@ model ProcessedStripeEvent {
   processedAt DateTime @default(now()) @map("processed_at")
 
   @@map("processed_stripe_events")
+}
+
+// ============================
+// AI plan generator
+// ============================
+
+/// One admin request to generate several plans. Each plan is its own job, so a crash or a
+/// failed plan never loses the rest of the batch.
+model AiGenerationBatch {
+  id            String            @id @default(cuid())
+  /// diet | exercise
+  kind          String            @db.VarChar(20)
+  /// queued | running | completed | cancelled (completed even when some jobs failed)
+  status        String            @default("queued") @db.VarChar(20)
+  /// ai_generated | stock | stock_or_ai | admin_upload
+  mediaSource   String            @map("media_source") @db.VarChar(20)
+  /// The admin's form: goal, level, weeks, calories, cuisine, free-text brief.
+  settings      Json
+  planCount     Int               @map("plan_count")
+  /// Stop starting new jobs once the batch has spent this much (USD). Null = no cap.
+  costCapUsd    Float?            @map("cost_cap_usd")
+  costUsd       Float             @default(0) @map("cost_usd")
+  createdById   String?           @map("created_by_id")
+  createdBy     User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  finishedAt    DateTime?         @map("finished_at")
+  jobs          AiGenerationJob[]
+  dietPlans     DietPlan[]
+  exercisePlans ExercisePlan[]
+  exercises     Exercise[]
+
+  @@index([createdAt])
+  @@map("ai_generation_batches")
+}
+
+/// One plan to generate inside a batch, picked up by the worker in the API process.
+model AiGenerationJob {
+  id           String            @id @default(cuid())
+  batchId      String            @map("batch_id")
+  batch        AiGenerationBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  /// Position in the batch (0-based), so jobs run and display in order.
+  position     Int
+  /// queued | running | succeeded | needs_attention | failed | cancelled
+  status       String            @default("queued") @db.VarChar(20)
+  /// What this one plan should be (derived from the batch settings).
+  spec         Json
+  attempts     Int               @default(0)
+  /// diet_plans.id or exercise_plans.id of the draft this job produced.
+  resultPlanId String?           @map("result_plan_id")
+  costUsd      Float             @default(0) @map("cost_usd")
+  /// Step-by-step trace of the agent (tool calls, validation results), for the admin page.
+  log          Json              @default("[]")
+  errorMessage String?           @map("error_message") @db.Text
+  /// Extra facts for the admin's review: pictures waiting for publish (pendingMedia) and the
+  /// USDA food each ingredient was matched to (nutritionSources).
+  reviewData   Json              @default("{}") @map("review_data")
+  /// Set when a worker claims the job; a stale value means the API restarted mid-job.
+  lockedAt     DateTime?         @map("locked_at")
+  startedAt    DateTime?         @map("started_at")
+  finishedAt   DateTime?         @map("finished_at")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@index([batchId, position])
+  @@map("ai_generation_jobs")
 }

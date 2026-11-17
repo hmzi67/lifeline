@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { medicationAdherence } from '../services/medicationAdherence.js';
 import { prisma } from '../config/database.js';
 import jwt from 'jsonwebtoken';
+import { verifyAccessToken } from '../utils/accessToken.js';
 import { DEFAULT_WATER_GOAL_UNIT, getDefaultWaterGoalAmount } from '../utils/waterGoal.js';
 import { config } from '../config/index.js';
 
@@ -28,7 +29,7 @@ const getUserIdFromToken = (req: Request): string | null => {
   }
   const token = authHeader.substring(7);
   try {
-    const decoded = jwt.verify(token, config.jwt.secret) as {
+    const decoded = verifyAccessToken(token) as {
       userId: string;
     };
     return decoded.userId;

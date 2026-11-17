@@ -4,6 +4,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Request, Response } from 'express';
 import { OAuth2Client } from 'google-auth-library';
 import jwt from 'jsonwebtoken';
+import { verifyAccessToken, verifyRefreshToken } from '../utils/accessToken.js';
 import passport from 'passport';
 import { z } from 'zod';
 import { config } from '../config/index.js';
@@ -18,6 +19,8 @@ import {
 } from '../services/appleIdentityService.js';
 import { encryptAppleToken, exchangeAppleAuthorizationCode } from '../services/appleTokenService.js';
 import { PASSWORD_MIN_LENGTH, PASSWORD_TOO_SHORT } from '../utils/passwordPolicy.js';
+import { isAdminOnMobile, MOBILE_ADMIN_DENIAL } from '../utils/adminRole.js';
+
 
 // JWT Payload interfaces
 interface JWTPayload {
@@ -52,14 +55,14 @@ export const generateTokens = (userId: string, email: string, roleId?: string) =
     config.jwt.secret,
     // Short-lived (JWT_EXPIRES_IN, 15m by default): a leaked access token is soon useless,
     // and refresh resends a lost replacement, so frequent refreshes cannot strand a client.
-    { expiresIn: config.jwt.expiresIn as jwt.SignOptions['expiresIn'] }
+    { expiresIn: config.jwt.expiresIn as jwt.SignOptions['expiresIn'], algorithm: 'HS256' }
   );
 
   // jwtid keeps two refresh tokens issued in the same second distinct (token is @unique)
   const refreshToken = jwt.sign(
     { userId },
     config.jwt.refreshSecret,
-    { expiresIn: '7d', jwtid: randomBytes(16).toString('hex') }
+    { expiresIn: '7d', jwtid: randomBytes(16).toString('hex'), algorithm: 'HS256' }
   );
 
   return { accessToken, refreshToken };
@@ -431,6 +434,11 @@ export const login = async (req: Request, res: Response) => {
       });
     }
 
+    // Admin accounts can't sign in to the mobile app.
+    if (await isAdminOnMobile(req, user.roleId)) {
+      return res.status(403).json({ success: false, ...MOBILE_ADMIN_DENIAL });
+    }
+
     // Generate tokens - user.id is already a string (CUID)
     const { accessToken, refreshToken } = generateTokens(
       user.id,
@@ -582,10 +590,7 @@ export const refreshToken = async (req: Request, res: Response) => {
     });
 
     // Verify refresh token
-    const decoded = jwt.verify(
-      refreshToken,
-      config.jwt.refreshSecret
-    ) as RefreshTokenPayload;
+    const decoded = verifyRefreshToken(refreshToken) as RefreshTokenPayload;
 
     // Check if the refresh token exists in a database and is not expired
     // No need to parse userId as integer - it's already a string (CUID)
@@ -625,6 +630,11 @@ export const refreshToken = async (req: Request, res: Response) => {
         message: 'Your account has been suspended. Please contact support.',
         code: 'ACCOUNT_SUSPENDED',
       });
+    }
+
+    // Admin accounts can't sign in to the mobile app.
+    if (await isAdminOnMobile(req, storedToken.user.roleId)) {
+      return res.status(403).json({ success: false, ...MOBILE_ADMIN_DENIAL });
     }
 
     // Rotate without ever stranding the client: the presented token stays valid until
@@ -755,7 +765,7 @@ export const getCurrentUser = async (req: Request, res: Response) => {
     }
 
     const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, config.jwt.secret) as JWTPayload;
+    const decoded = verifyAccessToken(token) as JWTPayload;
 
     // No need to parse userId as integer - it's already a string (CUID)
     const user = await prisma.user.findUnique({
@@ -1218,6 +1228,16 @@ export const googleMobileAuth = async (req: Request, res: Response) => {
       });
     }
 
+    // The account is found, linked or created by this email, so Google must vouch for it.
+    // Without this, a Google account carrying someone else's unverified address could sign in
+    // as them (Google marks Gmail and verified Workspace addresses true).
+    if (payload.email_verified !== true) {
+      return res.status(401).json({
+        success: false,
+        message: 'Your Google account email is not verified',
+      });
+    }
+
     const { email, sub: googleId, name, picture } = payload;
 
     // Check if user already exists
@@ -1285,6 +1305,11 @@ export const googleMobileAuth = async (req: Request, res: Response) => {
           status: true,
         },
       });
+    }
+
+    // Admin accounts can't sign in to the mobile app.
+    if (await isAdminOnMobile(req, user.roleId)) {
+      return res.status(403).json({ success: false, ...MOBILE_ADMIN_DENIAL });
     }
 
     // Generate JWT tokens for the app
@@ -1647,6 +1672,11 @@ export const appleMobileAuth = async (req: Request, res: Response) => {
       await storeAppleRefreshToken(user.id, authorizationCode, payload.aud);
     }
 
+    // Admin accounts can't sign in to the mobile app.
+    if (await isAdminOnMobile(req, user.roleId)) {
+      return res.status(403).json({ success: false, ...MOBILE_ADMIN_DENIAL });
+    }
+
     const { accessToken, refreshToken } = await issueAppleSession(user);
 
     // Return tokens and user info to mobile app
@@ -1681,7 +1711,7 @@ export const logoutFromAllDevices = async (req: Request, res: Response) => {
     }
 
     const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, config.jwt.secret) as JWTPayload;
+    const decoded = verifyAccessToken(token) as JWTPayload;
 
     // Delete all refresh tokens for this user
     await prisma.refreshToken.deleteMany({
