@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Ticket, Calendar, Hash, Users, ToggleLeft, ToggleRight, Trash2, Pencil, Plus, BarChart2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Ticket, Calendar, Users, ToggleLeft, ToggleRight, Stethoscope } from 'lucide-react';
 import { CrudTable, type Column } from '@/components/shared/CrudTable';
 import { FormModal, type FormField } from '@/components/shared/FormModal';
 import { CrudService, handleApiError } from '@/services/crudService';
@@ -12,7 +12,10 @@ interface CouponCode {
     description: string | null;
     discountPercent: number;
     maxUses: number;
+    maxUsesPerUser: number;
     currentUses: number;
+    doctorId: string | null;
+    doctor?: { id: string; name: string; clinic: string | null } | null;
     isActive: boolean;
     expiresAt: string | null;
     createdAt: string;
@@ -23,7 +26,34 @@ interface CouponCode {
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
+interface DoctorOption {
+    id: string;
+    name: string;
+    clinic: string | null;
+    isActive: boolean;
+}
+
 const couponService = new CrudService<CouponCode>('/coupons');
+const doctorService = new CrudService<DoctorOption>('/doctors');
+
+/** yyyy-mm-dd, `days` from today in local time. */
+const daysFromToday = (days: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    return toDateInput(d.toISOString());
+};
+
+/** The picked date's last second, local time: the coupon still works on that day. */
+const endOfDay = (date: string) => new Date(`${date}T23:59:59.999`).toISOString();
+
+/** yyyy-mm-dd in local time, for the date input. */
+const toDateInput = (iso: string) => {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const isExpired = (coupon: CouponCode) => !!coupon.expiresAt && new Date(coupon.expiresAt) < new Date();
+const isUsedUp = (coupon: CouponCode) => coupon.currentUses >= coupon.maxUses;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -33,9 +63,16 @@ const CouponComponent: React.FC = () => {
     const [error, setError] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingCoupon, setEditingCoupon] = useState<CouponCode | null>(null);
+    const [doctors, setDoctors] = useState<DoctorOption[]>([]);
 
     useEffect(() => {
         fetchCoupons();
+        doctorService
+            .getAll()
+            .then((response) => {
+                if (response.success && Array.isArray(response.data)) setDoctors(response.data);
+            })
+            .catch((err) => setError(handleApiError(err)));
     }, []);
 
     const fetchCoupons = async () => {
@@ -83,19 +120,31 @@ const CouponComponent: React.FC = () => {
     };
 
     const handleSubmit = async (data: Record<string, any>) => {
+        // New coupons take "valid for N days"; an existing one shows and edits its end date.
+        const lastDay = editingCoupon
+            ? data.expiresAt
+            : Number(data.validDays) > 0
+              ? daysFromToday(Number(data.validDays))
+              : '';
         const payload = {
-            code: String(data.code || '').toUpperCase(),
             description: data.description || undefined,
             discountPercent: Number(data.discountPercent) || 10,
             maxUses: Number(data.maxUses),
+            maxUsesPerUser: Number(data.maxUsesPerUser) || 1,
             isActive: data.isActive !== 'false',
-            expiresAt: data.expiresAt ? new Date(data.expiresAt).toISOString() : null,
+            expiresAt: lastDay ? endOfDay(lastDay) : null,
+            doctorId: data.doctorId || null,
         };
 
-        if (editingCoupon) {
-            await couponService.update(editingCoupon.id, payload);
-        } else {
-            await couponService.create(payload);
+        try {
+            if (editingCoupon) {
+                await couponService.update(editingCoupon.id, payload); // the code itself cannot change
+            } else {
+                await couponService.create({ ...payload, code: String(data.code || '').toUpperCase() });
+            }
+        } catch (err: any) {
+            // Show the server's reason (e.g. "A coupon with this code already exists"), not "status code 409".
+            throw new Error(handleApiError(err));
         }
         fetchCoupons();
     };
@@ -123,6 +172,22 @@ const CouponComponent: React.FC = () => {
             ),
         },
         {
+            key: 'doctor',
+            label: 'Doctor',
+            render: (_value, row) =>
+                row.doctor ? (
+                    <div className="text-sm">
+                        <div className="flex items-center gap-1 font-medium text-gray-900">
+                            <Stethoscope className="w-3.5 h-3.5 text-teal-500" />
+                            {row.doctor.name}
+                        </div>
+                        {row.doctor.clinic && <div className="text-xs text-gray-500">{row.doctor.clinic}</div>}
+                    </div>
+                ) : (
+                    <span className="text-sm text-gray-400">—</span>
+                ),
+        },
+        {
             key: 'discountPercent',
             label: 'Discount',
             render: (value) => (
@@ -136,6 +201,7 @@ const CouponComponent: React.FC = () => {
             label: 'Usage',
             render: (value, row) => {
                 const pct = Math.round((value / row.maxUses) * 100);
+                const left = Math.max(row.maxUses - value, 0);
                 const barColor = pct >= 100 ? 'bg-red-400' : pct >= 75 ? 'bg-orange-400' : 'bg-emerald-400';
                 return (
                     <div className="w-32">
@@ -146,6 +212,9 @@ const CouponComponent: React.FC = () => {
                         <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                             <div className={`h-full ${barColor} rounded-full transition-all`} style={{ width: `${Math.min(pct, 100)}%` }} />
                         </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                            {left === 0 ? 'None left' : `${left} left`} · {row.maxUsesPerUser === 1 ? '1 per user' : `${row.maxUsesPerUser} per user`}
+                        </div>
                     </div>
                 );
             },
@@ -154,6 +223,7 @@ const CouponComponent: React.FC = () => {
             key: 'isActive',
             label: 'Status',
             render: (value, row) => (
+                <div className="flex flex-col items-start gap-1">
                 <button
                     type="button"
                     onClick={() => handleToggleActive(row)}
@@ -166,6 +236,10 @@ const CouponComponent: React.FC = () => {
                     {value ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
                     {value ? 'Active' : 'Inactive'}
                 </button>
+                {value && (isExpired(row) || isUsedUp(row)) && (
+                    <span className="text-xs font-medium text-red-600">{isExpired(row) ? 'Expired' : 'Used up'}</span>
+                )}
+                </div>
             ),
         },
         {
@@ -189,41 +263,87 @@ const CouponComponent: React.FC = () => {
 
     // ─── Form Fields ─────────────────────────────────────────────────────────
 
-    const formFields: FormField[] = [
+    const doctorOptions = useMemo(
+        () => [
+            { value: '', label: 'No doctor' },
+            ...doctors
+                .filter((d) => d.isActive || d.id === editingCoupon?.doctorId)
+                .map((d) => ({ value: d.id, label: d.clinic ? `${d.name} (${d.clinic})` : d.name })),
+        ],
+        [doctors, editingCoupon],
+    );
+
+    const formFields = useMemo<FormField[]>(() => [
         {
             name: 'code',
             label: 'Coupon Code',
             type: 'text',
             required: true,
             placeholder: 'e.g. DOCTOR10',
+            disabled: !!editingCoupon,
+            hint: editingCoupon ? 'The code cannot be changed after it is created.' : undefined,
+        },
+        {
+            name: 'doctorId',
+            label: 'Doctor',
+            type: 'select',
+            required: false,
+            options: doctorOptions,
+            hint: doctors.length ? 'The doctor who gives this code to patients.' : 'Add doctors on the Doctors page first.',
         },
         {
             name: 'description',
             label: 'Description',
             type: 'text',
             required: false,
-            placeholder: 'Optional description for this coupon',
+            placeholder: 'e.g. Dr. Ahmed - clinic patients',
         },
         {
             name: 'discountPercent',
             label: 'Discount (%)',
             type: 'number',
             required: true,
-            placeholder: '10',
+            placeholder: '50',
+            min: 1,
+            max: 100,
+            hint: 'e.g. 50 makes a $20 plan $10.',
         },
         {
             name: 'maxUses',
-            label: 'Max Uses (Usage Limit)',
+            label: 'Total Uses (number of coupons)',
             type: 'number',
             required: true,
-            placeholder: '100',
+            placeholder: '10',
+            min: 1,
+            hint: 'How many times this coupon can be used in total, e.g. 10 for a doctor.',
         },
         {
-            name: 'expiresAt',
-            label: 'Expiry Date (optional)',
-            type: 'date',
-            required: false,
+            name: 'maxUsesPerUser',
+            label: 'Uses per User',
+            type: 'number',
+            required: true,
+            placeholder: '1',
+            min: 1,
+            max: 100,
+            hint: 'How many times one user can use this coupon. Usually 1.',
         },
+        editingCoupon
+            ? {
+                  name: 'expiresAt',
+                  label: 'Expiry Date (optional)',
+                  type: 'date',
+                  required: false,
+                  hint: 'Last day the coupon works. Leave empty for no expiry.',
+              }
+            : {
+                  name: 'validDays',
+                  label: 'Valid for (days)',
+                  type: 'number',
+                  required: false,
+                  placeholder: '15',
+                  min: 1,
+                  hint: 'e.g. 15 or 20. The coupon works until the end of that day. Leave empty for no expiry.',
+              },
         {
             name: 'isActive',
             label: 'Status',
@@ -234,7 +354,25 @@ const CouponComponent: React.FC = () => {
                 { value: 'false', label: 'Inactive' },
             ],
         },
-    ];
+    ], [editingCoupon, doctorOptions, doctors.length]);
+
+    // Memoized: the form resets whenever these change, so they must not be rebuilt on every render.
+    const initialData = useMemo(
+        () =>
+            editingCoupon
+                ? {
+                      code: editingCoupon.code,
+                      doctorId: editingCoupon.doctorId || '',
+                      description: editingCoupon.description || '',
+                      discountPercent: editingCoupon.discountPercent,
+                      maxUses: editingCoupon.maxUses,
+                      maxUsesPerUser: editingCoupon.maxUsesPerUser,
+                      expiresAt: editingCoupon.expiresAt ? toDateInput(editingCoupon.expiresAt) : '',
+                      isActive: String(editingCoupon.isActive),
+                  }
+                : { discountPercent: 10, maxUsesPerUser: 1, doctorId: '', isActive: 'true' },
+        [editingCoupon],
+    );
 
     // ─── Stats ────────────────────────────────────────────────────────────────
 
@@ -246,7 +384,7 @@ const CouponComponent: React.FC = () => {
         },
         {
             label: 'Active Coupons',
-            value: coupons.filter((c) => c.isActive).length,
+            value: coupons.filter((c) => c.isActive && !isExpired(c) && !isUsedUp(c)).length,
             gradient: 'bg-gradient-to-br from-green-100 to-emerald-100',
         },
         {
@@ -255,8 +393,8 @@ const CouponComponent: React.FC = () => {
             gradient: 'bg-gradient-to-br from-blue-100 to-cyan-100',
         },
         {
-            label: 'Expired / Inactive',
-            value: coupons.filter((c) => !c.isActive || (c.expiresAt && new Date(c.expiresAt) < new Date())).length,
+            label: 'Expired / Used up / Inactive',
+            value: coupons.filter((c) => !c.isActive || isExpired(c) || isUsedUp(c)).length,
             gradient: 'bg-gradient-to-br from-gray-100 to-slate-100',
         },
     ];
@@ -272,7 +410,7 @@ const CouponComponent: React.FC = () => {
                 onDelete={handleDelete}
                 onAdd={handleCreate}
                 title="Coupon Codes"
-                description="Create and manage discount coupons for doctors and promoters (10% off)"
+                description="Create discount coupons for doctors and promoters, with a usage limit and expiry date"
                 icon={Ticket}
                 searchPlaceholder="Search coupons..."
                 emptyMessage="No coupons found. Create one to get started."
@@ -285,20 +423,7 @@ const CouponComponent: React.FC = () => {
                 onSubmit={handleSubmit}
                 title={editingCoupon ? `Edit Coupon: ${editingCoupon.code}` : 'Create New Coupon'}
                 fields={formFields}
-                initialData={
-                    editingCoupon
-                        ? {
-                              code: editingCoupon.code,
-                              description: editingCoupon.description || '',
-                              discountPercent: editingCoupon.discountPercent,
-                              maxUses: editingCoupon.maxUses,
-                              expiresAt: editingCoupon.expiresAt
-                                  ? new Date(editingCoupon.expiresAt).toISOString().split('T')[0]
-                                  : '',
-                              isActive: String(editingCoupon.isActive),
-                          }
-                        : { discountPercent: 10, isActive: 'true' }
-                }
+                initialData={initialData}
                 submitLabel={editingCoupon ? 'Save Changes' : 'Create Coupon'}
             />
         </>

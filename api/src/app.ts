@@ -28,6 +28,7 @@ import challengeExerciseRouter from './routes/challengeExerciseRoutes.js';
 import challengeRoutes from './routes/challengeRoutes.js';
 import cheatDayRoutes from './routes/cheatDayRoutes.js';
 import couponRoutes from './routes/couponRoutes.js';
+import doctorRoutes from './routes/doctorRoutes.js';
 import dietMealLogRoutes from './routes/dietMealLogRoutes.js';
 import dietPlanDayRoutes from './routes/dietPlanDayRoutes.js';
 import dietPlanMealRoutes from './routes/dietPlanMealRoutes.js';
@@ -263,6 +264,7 @@ app.use('/api/progress', progressRoutes);
 
 // Coupon routes (admin CRUD + user validate)
 app.use('/api/coupons', couponRoutes);
+app.use('/api/doctors', doctorRoutes);
 
 // Referral code routes (admin CRUD + user validate)
 app.use('/api/referral-codes', referralRoutes);

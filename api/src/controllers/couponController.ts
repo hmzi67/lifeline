@@ -23,9 +23,22 @@ const createCouponSchema = z.object({
     .max(100, 'Discount cannot exceed 100%')
     .default(10),
   maxUses: z.number().int().min(1, 'Max uses must be at least 1'),
+  maxUsesPerUser: z
+    .number()
+    .int()
+    .min(1, 'Uses per user must be at least 1')
+    .max(100, 'Uses per user cannot exceed 100')
+    .default(1),
   isActive: z.boolean().default(true),
   expiresAt: z.string().datetime().optional().nullable(),
+  doctorId: z.string().min(1).max(64).optional().nullable(),
 });
+
+const DOCTOR_FIELDS = { id: true, name: true, clinic: true } as const;
+
+/** A coupon can only be given to a doctor who exists. */
+const doctorMissing = async (doctorId: string | null | undefined) =>
+  !!doctorId && !(await prisma.doctor.findUnique({ where: { id: doctorId }, select: { id: true } }));
 
 const updateCouponSchema = partialWithoutDefaults(createCouponSchema).omit({ code: true });
 
@@ -39,6 +52,10 @@ export const createCoupon = async (req: Request, res: Response) => {
   try {
     const adminId = (req as AuthenticatedRequest).user?.id;
     const data = createCouponSchema.parse(req.body);
+
+    if (await doctorMissing(data.doctorId)) {
+      return res.status(400).json({ success: false, message: 'Doctor not found' });
+    }
 
     // Ensure code is unique (case-insensitive already forced to upper)
     const existing = await prisma.couponCode.findUnique({ where: { code: data.code } });
@@ -55,12 +72,15 @@ export const createCoupon = async (req: Request, res: Response) => {
         description: data.description,
         discountPercent: data.discountPercent,
         maxUses: data.maxUses,
+        maxUsesPerUser: data.maxUsesPerUser,
         isActive: data.isActive,
         expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
+        doctorId: data.doctorId || null,
         createdById: adminId ?? null,
       },
       include: {
         createdBy: { select: { id: true, email: true, username: true } },
+        doctor: { select: DOCTOR_FIELDS },
         _count: { select: { usages: true } },
       },
     });
@@ -83,13 +103,14 @@ export const createCoupon = async (req: Request, res: Response) => {
 
 export const getAllCoupons = async (req: Request, res: Response) => {
   try {
-    const { page = '1', limit: rawLimit, search, isActive } = req.query;
+    const { page = '1', limit: rawLimit, search, isActive, doctorId } = req.query;
     const limit = pageSize(rawLimit, 20);
     const skip = (Number(page) - 1) * Number(limit);
 
     const where: any = {};
     if (search) where.code = { contains: String(search).toUpperCase() };
     if (isActive !== undefined) where.isActive = isActive === 'true';
+    if (doctorId) where.doctorId = String(doctorId);
 
     const [coupons, total] = await Promise.all([
       prisma.couponCode.findMany({
@@ -99,6 +120,7 @@ export const getAllCoupons = async (req: Request, res: Response) => {
         orderBy: { createdAt: 'desc' },
         include: {
           createdBy: { select: { id: true, email: true, username: true } },
+          doctor: { select: DOCTOR_FIELDS },
           _count: { select: { usages: true } },
         },
       }),
@@ -127,6 +149,7 @@ export const getCouponById = async (req: Request, res: Response) => {
       where: { id },
       include: {
         createdBy: { select: { id: true, email: true, username: true } },
+        doctor: { select: DOCTOR_FIELDS },
         usages: {
           include: { user: { select: { id: true, email: true, username: true } } },
           orderBy: { usedAt: 'desc' },
@@ -156,15 +179,20 @@ export const updateCoupon = async (req: Request, res: Response) => {
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Coupon not found' });
     }
+    if (await doctorMissing(data.doctorId)) {
+      return res.status(400).json({ success: false, message: 'Doctor not found' });
+    }
 
     const coupon = await prisma.couponCode.update({
       where: { id },
       data: {
         ...data,
+        doctorId: data.doctorId !== undefined ? data.doctorId || null : undefined,
         expiresAt: data.expiresAt !== undefined ? (data.expiresAt ? new Date(data.expiresAt) : null) : undefined,
       },
       include: {
         createdBy: { select: { id: true, email: true, username: true } },
+        doctor: { select: DOCTOR_FIELDS },
         _count: { select: { usages: true } },
       },
     });

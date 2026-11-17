@@ -32,7 +32,7 @@ const Checkout: React.FC = () => {
         }
     ]);
 
-    const [couponCode, setCouponCode] = useState('Lifeitfirst00');
+    const [couponCode, setCouponCode] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('gpay');
     const [agreeToTerms, setAgreeToTerms] = useState(false);
 
@@ -41,8 +41,8 @@ const Checkout: React.FC = () => {
         const selectedProducts = products.filter(p => p.selected);
         const subtotal = selectedProducts.reduce((sum, product) => sum + (product.price * product.quantity), 0);
 
-        // Discount logic - you can modify this based on your business rules
-        const discountAmount = couponCode === 'Lifeitfirst00' ? 97.0 : 0;
+        // Codes are checked and priced by the server at payment (Pricing page); none is applied here.
+        const discountAmount = 0;
         const orderAmount = Math.max(0, subtotal - discountAmount);
         const taxRate = 0.18;
         const taxes = orderAmount * taxRate;
@@ -55,7 +55,7 @@ const Checkout: React.FC = () => {
             taxes,
             payableAmount
         };
-    }, [products, couponCode]);
+    }, [products]);
 
     const handleQuantityChange = (productId: string, increment: boolean) => {
         setProducts(prev => prev.map(product => {

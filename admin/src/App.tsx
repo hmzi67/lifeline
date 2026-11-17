@@ -26,6 +26,7 @@ const BlogComponent = lazy(() => import('@/components/pages/BlogComponent'));
 const PricingPlanComponent = lazy(() => import('@/components/pages/PricingPlanComponent'));
 const CouponComponent = lazy(() => import('@/components/pages/CouponComponent'));
 const ReferralComponent = lazy(() => import('@/components/pages/ReferralComponent'));
+const DoctorComponent = lazy(() => import('@/components/pages/DoctorComponent'));
 
 const SectionFallback = () => (
     <div className="flex items-center justify-center h-64">
@@ -78,6 +79,8 @@ const AdminLayout: React.FC = () => {
                 return <BlogComponent />;
             case 'pricingPlans':
                 return <PricingPlanComponent />;
+            case 'doctors':
+                return <DoctorComponent />;
             case 'coupons':
                 return <CouponComponent />;
             case 'notifications':

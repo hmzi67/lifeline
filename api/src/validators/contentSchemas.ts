@@ -118,6 +118,15 @@ export const appSettingsBulkBody = z.object({ settings: z.array(appSetting).max(
 
 export const blogCategoryBody = z.object({ name: text(100), slug: text(150) });
 
+export const doctorBody = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(120, 'Must be at most 120 characters'),
+  clinic: text(160),
+  phone: text(40),
+  email: text(255),
+  notes: text(2000),
+  isActive: flag,
+});
+
 export const blogBody = z.object({
   title: text(300),
   slug: text(300),

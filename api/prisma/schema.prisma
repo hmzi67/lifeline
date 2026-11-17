@@ -26,35 +26,35 @@ model Role {
 
 // Users Table
 model User {
-  id                   String    @id @default(cuid())
-  email                String    @unique @db.VarChar(255)
-  username             String?   @unique @db.VarChar(100)
-  displayName          String?   @map("display_name") @db.VarChar(100)
-  googleId             String?   @unique @map("google_id") @db.VarChar(255)
-  appStoreAccountToken String?   @unique @map("app_store_account_token") @db.VarChar(36)
+  id                       String    @id @default(cuid())
+  email                    String    @unique @db.VarChar(255)
+  username                 String?   @unique @db.VarChar(100)
+  displayName              String?   @map("display_name") @db.VarChar(100)
+  googleId                 String?   @unique @map("google_id") @db.VarChar(255)
+  appStoreAccountToken     String?   @unique @map("app_store_account_token") @db.VarChar(36)
   /// Sign in with Apple refresh token (AES-GCM encrypted), revoked when the account is deleted.
-  appleRefreshToken    String?   @map("apple_refresh_token") @db.Text
+  appleRefreshToken        String?   @map("apple_refresh_token") @db.Text
   /// The client_id (bundle ID or Services ID) the Apple token was issued to.
-  appleClientId        String?   @map("apple_client_id") @db.VarChar(255)
-  profileImage         String?   @map("profile_image") @db.Text
-  phone                String?   @db.VarChar(30)
-  isEmailVerified      Boolean   @default(false) @map("is_email_verified")
-  subject              String?   @unique @db.VarChar(255)
-  password             String?   @db.VarChar(255)
-  otp                  String?   @db.VarChar(20)
-  otpPurpose           String?   @map("otp_purpose") @db.VarChar(20)
-  otpExpiresAt         DateTime? @map("otp_expires_at")
-  otpAttempts          Int       @default(0) @map("otp_attempts")
+  appleClientId            String?   @map("apple_client_id") @db.VarChar(255)
+  profileImage             String?   @map("profile_image") @db.Text
+  phone                    String?   @db.VarChar(30)
+  isEmailVerified          Boolean   @default(false) @map("is_email_verified")
+  subject                  String?   @unique @db.VarChar(255)
+  password                 String?   @db.VarChar(255)
+  otp                      String?   @db.VarChar(20)
+  otpPurpose               String?   @map("otp_purpose") @db.VarChar(20)
+  otpExpiresAt             DateTime? @map("otp_expires_at")
+  otpAttempts              Int       @default(0) @map("otp_attempts")
   // Per-account password reset budget for a rolling 24h window (see passwordResetBudget.ts).
   passwordResetWindowStart DateTime? @map("password_reset_window_start")
   passwordResetSentCount   Int       @default(0) @map("password_reset_sent_count")
   passwordResetLastSentAt  DateTime? @map("password_reset_last_sent_at")
   passwordResetFailedCount Int       @default(0) @map("password_reset_failed_count")
-  status               String?   @db.VarChar(20)
-  trialUsedAt          DateTime? @map("trial_used_at")
-  roleId               String?   @map("role_id")
-  createdAt            DateTime  @default(now()) @map("created_at")
-  updatedAt            DateTime  @updatedAt @map("updated_at")
+  status                   String?   @db.VarChar(20)
+  trialUsedAt              DateTime? @map("trial_used_at")
+  roleId                   String?   @map("role_id")
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
 
   role                      Role?                      @relation(fields: [roleId], references: [id])
   authTokens                AuthToken[]
@@ -115,7 +115,6 @@ model AuthToken {
   user         User?     @relation(fields: [userId], references: [id])
 
   @@index([userId])
-
   @@map("auth_tokens")
 }
 
@@ -249,10 +248,8 @@ model UserLicense {
 
   @@index([userId])
   @@index([paymentId])
-
   @@map("user_licenses")
 }
-
 
 // ============================
 // Questionnaire Module
@@ -281,7 +278,6 @@ model Questionnaire {
   user                User?     @relation(fields: [userId], references: [id])
 
   @@index([userId])
-
   @@map("questionnaires")
 }
 
@@ -325,7 +321,6 @@ model UserDietPlan {
   diet      DietPlan? @relation(fields: [dietId], references: [id])
 
   @@index([userId])
-
   @@map("user_diet_plans")
 }
 
@@ -339,7 +334,6 @@ model DietPlanDay {
   dietPlanMeals DietPlanMeal[]
 
   @@index([dietId])
-
   @@map("diet_plan_days")
 }
 
@@ -371,7 +365,6 @@ model DietPlanMeal {
   dietMealLogs DietMealLog[]
 
   @@index([dayId])
-
   @@map("diet_plan_meals")
 }
 
@@ -459,7 +452,6 @@ model UserExercise {
   exercise   Exercise? @relation(fields: [exerciseId], references: [id])
 
   @@index([userId])
-
   @@map("user_exercises")
 }
 
@@ -493,7 +485,6 @@ model ExercisePlanWeek {
   exercisePlanSchedule ExercisePlanSchedule[]
 
   @@index([planId])
-
   @@map("exercise_plan_weeks")
 }
 
@@ -513,7 +504,6 @@ model ExercisePlanSchedule {
   userExerciseProgress UserExerciseProgress[]
 
   @@index([weekId])
-
   @@map("exercise_plan_schedule")
 }
 
@@ -529,7 +519,6 @@ model UserActiveExercisePlan {
   plan        ExercisePlan @relation(fields: [planId], references: [id])
 
   @@index([userId])
-
   @@map("user_active_exercise_plan")
 }
 
@@ -546,7 +535,6 @@ model ExerciseDetail {
   exercise     Exercise @relation(fields: [exerciseId], references: [id])
 
   @@index([exerciseId])
-
   @@map("exercise_details")
 }
 
@@ -563,7 +551,6 @@ model UserExerciseProgress {
   exerciseSchedule   ExercisePlanSchedule @relation(fields: [exerciseScheduleId], references: [id])
 
   @@index([userId])
-
   @@map("user_exercise_progress")
 }
 
@@ -597,7 +584,6 @@ model Challenge {
   reports            ChallengeReport[]
 
   @@index([submittedById])
-
   @@map("challenges")
 }
 
@@ -667,7 +653,6 @@ model ChallengeFee {
 
   @@index([userId])
   @@index([challengeId])
-
   @@map("challenge_fees")
 }
 
@@ -687,7 +672,6 @@ model UserChallenge {
 
   @@index([userId])
   @@index([challengeId])
-
   @@map("user_challenges")
 }
 
@@ -732,7 +716,6 @@ model CheatDay {
   user        User?     @relation(fields: [userId], references: [id])
 
   @@index([userId])
-
   @@map("cheat_days")
 }
 
@@ -768,7 +751,6 @@ model SleepLog {
   userDailyRoutines UserDailyRoutine[]
 
   @@index([userId])
-
   @@map("sleep_logs")
 }
 
@@ -786,7 +768,6 @@ model UserWaterGoal {
   user       User      @relation(fields: [userId], references: [id])
 
   @@index([userId])
-
   @@map("user_water_goal")
 }
 
@@ -806,7 +787,6 @@ model WaterIntakeLog {
   userDailyRoutines UserDailyRoutine[]
 
   @@index([userId])
-
   @@map("water_intake_logs")
 }
 
@@ -834,7 +814,6 @@ model Medication {
   userDailyRoutines   UserDailyRoutine[]
 
   @@index([userId])
-
   @@map("medications")
 }
 
@@ -881,7 +860,6 @@ model MedicationReminder {
 
   @@index([userId])
   @@index([medicationId])
-
   @@map("medication_reminders")
 }
 
@@ -930,7 +908,6 @@ model MeditationSession {
   userFavoriteMeditations UserFavoriteMeditation[]
 
   @@index([meditationId])
-
   @@map("meditation_sessions")
 }
 
@@ -944,7 +921,6 @@ model UserFavoriteMeditation {
   session     MeditationSession @relation(fields: [sessionId], references: [id])
 
   @@index([userId])
-
   @@map("user_favorite_meditations")
 }
 
@@ -984,7 +960,6 @@ model UserDailyRoutine {
   water        WaterIntakeLog? @relation(fields: [waterId], references: [id])
 
   @@index([userId])
-
   @@map("user_daily_routine")
 }
 
@@ -1093,13 +1068,29 @@ model BlogComment {
   @@index([userId])
   @@index([blogId])
   @@index([parentId])
-
   @@map("blog_comments")
 }
 
 // ============================
 // Coupon & Referral Module
 // ============================
+
+// Doctors (managed by admin) who hand coupon codes to their patients. Not app accounts.
+model Doctor {
+  id        String   @id @default(cuid())
+  name      String   @db.VarChar(120)
+  clinic    String?  @db.VarChar(160)
+  phone     String?  @db.VarChar(40)
+  email     String?  @db.VarChar(255)
+  notes     String?  @db.Text
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  coupons CouponCode[]
+
+  @@map("doctors")
+}
 
 // Coupon Codes Table (created by admin, given to doctors/users)
 model CouponCode {
@@ -1108,16 +1099,20 @@ model CouponCode {
   description     String?   @db.Text
   discountPercent Int       @default(10) @map("discount_percent")
   maxUses         Int       @map("max_uses")
+  maxUsesPerUser  Int       @default(1) @map("max_uses_per_user")
   currentUses     Int       @default(0) @map("current_uses")
   isActive        Boolean   @default(true) @map("is_active")
   expiresAt       DateTime? @map("expires_at")
+  doctorId        String?   @map("doctor_id")
   createdById     String?   @map("created_by_id")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
+  doctor    Doctor?       @relation(fields: [doctorId], references: [id])
   createdBy User?         @relation("AdminCreatedCoupons", fields: [createdById], references: [id])
   usages    CouponUsage[]
 
+  @@index([doctorId])
   @@map("coupon_codes")
 }
 
@@ -1132,7 +1127,10 @@ model CouponUsage {
   coupon CouponCode @relation(fields: [couponId], references: [id])
   user   User       @relation(fields: [userId], references: [id])
 
-  @@unique([couponId, userId])
+  // One row per payment (finalizing a payment twice records it once); uses per user
+  // are limited by CouponCode.maxUsesPerUser instead of a unique key.
+  @@unique([couponId, paymentId])
+  @@index([couponId, userId])
   @@index([userId])
   @@map("coupon_usages")
 }

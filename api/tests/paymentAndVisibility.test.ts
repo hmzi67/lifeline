@@ -3,8 +3,8 @@ export {};
 const mockPrisma: any = {
   challenge: { findMany: jest.fn(), count: jest.fn() },
   userChallenge: { findMany: jest.fn() },
-  couponCode: { findUnique: jest.fn(), updateMany: jest.fn(), fields: { maxUses: 'maxUses-ref' } },
-  couponUsage: { findUnique: jest.fn(), createMany: jest.fn(), deleteMany: jest.fn() },
+  couponCode: { findUnique: jest.fn() },
+  couponUsage: { count: jest.fn() },
 };
 
 jest.mock('@prisma/client', () => ({
@@ -51,116 +51,145 @@ describe('challenge visibility', () => {
 });
 
 describe('couponService', () => {
-  const coupon = { id: 'c1', code: 'SAVE20', discountPercent: 20, isActive: true, expiresAt: null, maxUses: 10, currentUses: 0 };
+  const coupon = { id: 'c1', code: 'SAVE20', discountPercent: 20, isActive: true, expiresAt: null, maxUses: 10, maxUsesPerUser: 1, currentUses: 0 };
+
+  beforeEach(() => jest.resetAllMocks());
 
   it('discounts on the server and rounds to cents', () => {
     expect(applyDiscount(9.99, 20)).toBe(7.99);
+    expect(applyDiscount(20, 50)).toBe(10);
     expect(applyDiscount(60, 150)).toBe(0);
   });
 
-  it('rejects inactive, expired, exhausted and already-used coupons', async () => {
-    mockPrisma.couponUsage.findUnique.mockResolvedValue(null);
+  it('rejects unknown, inactive, expired and used-up coupons', async () => {
+    mockPrisma.couponUsage.count.mockResolvedValue(0);
 
     mockPrisma.couponCode.findUnique.mockResolvedValueOnce(null);
     await expect(findUsableCoupon(mockPrisma, 'nope', 'u1')).rejects.toMatchObject({ statusCode: 404 });
 
     mockPrisma.couponCode.findUnique.mockResolvedValueOnce({ ...coupon, isActive: false });
-    await expect(findUsableCoupon(mockPrisma, 'save20', 'u1')).rejects.toMatchObject({ statusCode: 400 });
+    await expect(findUsableCoupon(mockPrisma, 'save20', 'u1')).rejects.toMatchObject({ message: 'This coupon is no longer active' });
 
     mockPrisma.couponCode.findUnique.mockResolvedValueOnce({ ...coupon, expiresAt: new Date(Date.now() - 1000) });
-    await expect(findUsableCoupon(mockPrisma, 'save20', 'u1')).rejects.toMatchObject({ statusCode: 400 });
+    await expect(findUsableCoupon(mockPrisma, 'save20', 'u1')).rejects.toMatchObject({ message: 'This coupon has expired' });
 
     mockPrisma.couponCode.findUnique.mockResolvedValueOnce({ ...coupon, currentUses: 10 });
-    await expect(findUsableCoupon(mockPrisma, 'save20', 'u1')).rejects.toMatchObject({ statusCode: 400 });
-
-    mockPrisma.couponCode.findUnique.mockResolvedValueOnce(coupon);
-    mockPrisma.couponUsage.findUnique.mockResolvedValueOnce({ id: 'used' });
-    await expect(findUsableCoupon(mockPrisma, 'save20', 'u1')).rejects.toMatchObject({ statusCode: 400 });
+    await expect(findUsableCoupon(mockPrisma, 'save20', 'u1')).rejects.toMatchObject({ message: 'This coupon has reached its usage limit' });
 
     mockPrisma.couponCode.findUnique.mockResolvedValueOnce(coupon);
     await expect(findUsableCoupon(mockPrisma, ' save20 ', 'u1')).resolves.toEqual(coupon);
   });
 
-  it('records a coupon use once even if the payment is finalized twice', async () => {
-    mockPrisma.couponCode.findUnique.mockResolvedValue(coupon);
-    mockPrisma.couponUsage.createMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
-    mockPrisma.couponCode.updateMany.mockResolvedValue({ count: 1 });
+  it('holds each user to the coupon\'s uses-per-user setting', async () => {
+    mockPrisma.couponCode.findUnique.mockResolvedValueOnce(coupon);
+    mockPrisma.couponUsage.count.mockResolvedValueOnce(1);
+    await expect(findUsableCoupon(mockPrisma, 'save20', 'u1')).rejects.toMatchObject({ message: 'You have already used this coupon code' });
 
-    await expect(recordCouponUsage(mockPrisma, 'SAVE20', 'u1', 'pay-1')).resolves.toBe(true);
-    await expect(recordCouponUsage(mockPrisma, 'SAVE20', 'u1', 'pay-1')).resolves.toBe(false);
+    mockPrisma.couponCode.findUnique.mockResolvedValueOnce({ ...coupon, maxUsesPerUser: 3 });
+    mockPrisma.couponUsage.count.mockResolvedValueOnce(2);
+    await expect(findUsableCoupon(mockPrisma, 'save20', 'u1')).resolves.toMatchObject({ code: 'SAVE20' });
 
-    expect(mockPrisma.couponUsage.createMany.mock.calls[0][0]).toMatchObject({ skipDuplicates: true });
-    expect(mockPrisma.couponCode.updateMany).toHaveBeenCalledTimes(1);
-    // The increment is conditional on the row itself, not on a value read earlier.
-    expect(mockPrisma.couponCode.updateMany.mock.calls[0][0].where).toEqual({
-      id: coupon.id, currentUses: { lt: 'maxUses-ref' },
-    });
+    mockPrisma.couponCode.findUnique.mockResolvedValueOnce({ ...coupon, maxUsesPerUser: 3 });
+    mockPrisma.couponUsage.count.mockResolvedValueOnce(3);
+    await expect(findUsableCoupon(mockPrisma, 'save20', 'u1')).rejects.toMatchObject({ message: 'You have already used this coupon 3 times' });
+    expect(mockPrisma.couponUsage.count).toHaveBeenLastCalledWith({ where: { couponId: 'c1', userId: 'u1' } });
   });
 });
 
-describe('concurrent coupon redemption', () => {
-  // A stand-in for Postgres: the usage insert honours the unique key and the
-  // counter only moves when the row still has uses left, both checked at write time.
-  const fakeDb = (maxUses: number) => {
-    const row = { id: 'c-1', code: 'LAST1', isActive: true, expiresAt: null, maxUses, currentUses: 0 };
-    const usages: Array<{ couponId: string; userId: string; paymentId: string }> = [];
+describe('recording coupon uses', () => {
+  // A stand-in for Postgres. `SELECT ... FOR UPDATE` takes the coupon row's lock, held
+  // until that transaction ends; the (couponId, paymentId) key rejects a second row.
+  const fakeDb = (maxUses: number, maxUsesPerUser = 1) => {
+    const row = { id: 'c-1', code: 'DOC10', isActive: true, expiresAt: null, maxUses, maxUsesPerUser, currentUses: 0 };
+    const usages: { couponId: string; userId: string; paymentId: string }[] = [];
     const tick = () => new Promise((resolve) => setImmediate(resolve));
-    const db: any = {
-      couponCode: {
-        fields: { maxUses: 'maxUses-ref' },
-        findUnique: async () => { await tick(); return { ...row }; },
-        updateMany: async ({ where }: any) => {
-          await tick();
-          if (where.id !== row.id || where.currentUses.lt !== 'maxUses-ref' || row.currentUses >= row.maxUses) return { count: 0 };
-          row.currentUses += 1;
-          return { count: 1 };
+    let lock: Promise<void> = Promise.resolve();
+
+    /** Runs `fn` like prisma.$transaction: the row lock it takes is released when it returns. */
+    const transaction = async <T>(fn: (tx: any) => Promise<T>): Promise<T> => {
+      let release = () => {};
+      let holding = false;
+      const tx: any = {
+        $queryRaw: async () => {
+          const previous = lock;
+          lock = new Promise<void>((resolve) => { release = resolve; });
+          holding = true;
+          await previous;
         },
-      },
-      couponUsage: {
-        createMany: async ({ data: [usage] }: any) => {
-          await tick();
-          if (usages.some((u) => u.couponId === usage.couponId && u.userId === usage.userId)) return { count: 0 };
-          usages.push(usage);
-          return { count: 1 };
+        couponCode: {
+          findUnique: async () => { await tick(); return { ...row }; },
+          update: async () => { await tick(); row.currentUses += 1; return { ...row }; },
         },
-        deleteMany: async ({ where }: any) => {
-          const before = usages.length;
-          for (let i = usages.length - 1; i >= 0; i--) {
-            if (usages[i].userId === where.userId && usages[i].paymentId === where.paymentId) usages.splice(i, 1);
-          }
-          return { count: before - usages.length };
+        couponUsage: {
+          findUnique: async ({ where }: any) => {
+            await tick();
+            const key = where.couponId_paymentId;
+            return usages.find((u) => u.couponId === key.couponId && u.paymentId === key.paymentId) ?? null;
+          },
+          count: async ({ where }: any) => { await tick(); return usages.filter((u) => u.couponId === where.couponId && u.userId === where.userId).length; },
+          create: async ({ data }: any) => {
+            await tick();
+            if (usages.some((u) => u.couponId === data.couponId && u.paymentId === data.paymentId)) throw new Error('unique violation');
+            usages.push(data);
+            return data;
+          },
         },
-      },
+      };
+      try {
+        return await fn(tx);
+      } finally {
+        if (holding) release();
+      }
     };
-    return { db, row, usages };
+    return { transaction, row, usages };
   };
 
+  const redeem = (db: ReturnType<typeof fakeDb>, userId: string, paymentId: string) =>
+    db.transaction((tx) => recordCouponUsage(tx, 'DOC10', userId, paymentId));
+
+  beforeEach(() => jest.spyOn(console, 'warn').mockImplementation(() => {}));
+  afterEach(() => jest.restoreAllMocks());
+
   it('lets only one of several racing payments take the last use', async () => {
-    const { db, row, usages } = fakeDb(1);
-    const results = await Promise.all(
-      ['u1', 'u2', 'u3', 'u4'].map((userId) => recordCouponUsage(db, 'LAST1', userId, `pay-${userId}`)),
-    );
+    const db = fakeDb(1);
+    const results = await Promise.all(['u1', 'u2', 'u3', 'u4'].map((u) => redeem(db, u, `pay-${u}`)));
 
     expect(results.filter(Boolean)).toHaveLength(1);
-    expect(row.currentUses).toBe(1);
-    expect(usages).toHaveLength(1);
+    expect(db.row.currentUses).toBe(1);
+    expect(db.usages).toHaveLength(1);
   });
 
-  it('counts the same user once when confirm and webhook race', async () => {
-    const { db, row, usages } = fakeDb(5);
-    await Promise.all([
-      recordCouponUsage(db, 'LAST1', 'u1', 'pay-1'),
-      recordCouponUsage(db, 'LAST1', 'u1', 'pay-1'),
-    ]);
+  it('counts a payment once when the app\'s confirm and Stripe\'s webhook race', async () => {
+    const db = fakeDb(10);
+    await Promise.all([redeem(db, 'u1', 'pay-1'), redeem(db, 'u1', 'pay-1')]);
 
-    expect(row.currentUses).toBe(1);
-    expect(usages).toHaveLength(1);
+    expect(db.row.currentUses).toBe(1);
+    expect(db.usages).toHaveLength(1);
+  });
+
+  it('a doctor\'s 10 uses run out after 10 different patients', async () => {
+    const db = fakeDb(10);
+    const results = await Promise.all(Array.from({ length: 12 }, (_, i) => redeem(db, `patient-${i}`, `pay-${i}`)));
+
+    expect(results.filter(Boolean)).toHaveLength(10);
+    expect(db.row.currentUses).toBe(10);
+  });
+
+  it('lets one user use a coupon as many times as it allows, even when paying twice at once', async () => {
+    const once = fakeDb(10, 1);
+    await Promise.all([redeem(once, 'u1', 'pay-1'), redeem(once, 'u1', 'pay-2')]);
+    expect(once.row.currentUses).toBe(1);
+
+    const twice = fakeDb(10, 2);
+    const results = await Promise.all([1, 2, 3].map((n) => redeem(twice, 'u1', `pay-${n}`)));
+    expect(results.filter(Boolean)).toHaveLength(2);
+    expect(twice.row.currentUses).toBe(2);
   });
 });
 
 describe('payment routes', () => {
   it('only offers server-priced checkout; client-priced intents are gone', () => {
-    const paths = (paymentRouter.stack as Array<{ route?: { path: string } }>)
+    const paths = (paymentRouter.stack as { route?: { path: string } }[])
       .filter((layer) => layer.route)
       .map((layer) => layer.route!.path);
     expect(paths).toEqual(['/subscriptions', '/subscriptions/confirm', '/publishable-key']);
