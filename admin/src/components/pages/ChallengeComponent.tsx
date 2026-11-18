@@ -9,6 +9,15 @@ import { CrudService, handleApiError } from '@/services/crudService';
 import api from '@/lib/axios';
 import { Button } from '@/components/ui/button';
 
+// What a paid challenge can cost, in USD. Each price is an App Store product (challenge_usd_<price>),
+// so only these can be sold on iOS; keep in step with CHALLENGE_PRICES in the API.
+const CHALLENGE_PRICES = [1, 2, 3, 5, 7, 10, 14, 15, 20, 21, 25, 30, 40, 50, 60, 75, 90, 100];
+
+const ENTRY_FEE_OPTIONS = [
+    { value: '0', label: 'Free' },
+    ...CHALLENGE_PRICES.map(usd => ({ value: String(usd), label: `$${usd}` })),
+];
+
 interface Challenge {
     id: string;
     name: string | null;
@@ -24,6 +33,7 @@ interface Challenge {
     endDate: string | null;
     durationDays?: number | null;
     dailyFee?: string | number | null;
+    entryFee?: string | number | null;
     challengeExercises?: { exerciseId: string }[];
     challengeDiets?: { dietId: string }[];
     submittedBy?: {
@@ -639,10 +649,11 @@ const ChallengeComponent: React.FC = () => {
         },
         { name: 'startDate', label: 'Start Date', type: 'date' },
         { name: 'endDate', label: 'End Date', type: 'date' },
-        // Joiners pay daily fee x duration. Leave the fee empty for a free challenge.
-        // iOS can only sell $1/day for 7, 14 or 30 days (fixed App Store products).
         { name: 'durationDays', label: 'Duration (days)', type: 'number', min: 1, max: 365, placeholder: 'e.g., 7' },
-        { name: 'dailyFee', label: 'Daily Fee (USD)', type: 'number', min: 0, placeholder: 'Empty = free to join' },
+        {
+            name: 'entryFee', label: 'Entry Fee', type: 'select', options: ENTRY_FEE_OPTIONS,
+            hint: 'What joining costs for the whole challenge, whatever its length.',
+        },
         { name: 'image', label: 'Cover Image', type: 'file', accept: 'image/*' },
         { name: 'videoUrl', label: 'Challenge Video', type: 'file', accept: 'video/*' },
         {
@@ -659,6 +670,8 @@ const ChallengeComponent: React.FC = () => {
     const modalInitialData = React.useMemo(() => (editingChallenge
         ? {
             ...editingChallenge,
+            // Decimals arrive as strings ("25.00" or "25"); match the select's option values.
+            entryFee: editingChallenge.entryFee == null ? '' : String(Number(editingChallenge.entryFee)),
             exerciseIds: (editingChallenge.challengeExercises || []).map(e => e.exerciseId),
             dietIds: (editingChallenge.challengeDiets || []).map(d => d.dietId),
         }

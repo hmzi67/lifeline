@@ -8,10 +8,12 @@ import { notifyUser } from '../services/notificationService.js';
 import { challengePhase, isChallengeVisible, visibleChallengeWhere } from '../services/challengeTimeline.js';
 import {
   CHALLENGE_DURATIONS,
+  CHALLENGE_PRICES,
   ChallengePaymentError,
   challengePricing,
   confirmStripeCheckout,
   DEFAULT_DAILY_FEE,
+  isChallengePrice,
   recordApplePurchase,
   startAppleCheckout,
   startStripeCheckout,
@@ -148,9 +150,18 @@ const challengeFields = z.object({
   endDate: optionalDate,
   image: optionalText,
   videoUrl: optionalText,
-  // Paid challenges: joiners pay dailyFee x durationDays. No fee means free to join.
   durationDays: z.preprocess(blankToUndefined, z.coerce.number().int().min(1).max(365).optional()),
-  dailyFee: z.preprocess(blankToUndefined, z.coerce.number().min(0).max(1000).optional()),
+  // What joining costs, whatever the length: 0 is free, a paid price must be one of
+  // CHALLENGE_PRICES (each is an App Store product, so iOS can sell it).
+  entryFee: z.preprocess(
+    blankToUndefined,
+    z.coerce
+      .number()
+      .refine(usd => usd === 0 || isChallengePrice(usd), {
+        message: `Entry fee must be free or one of $${CHALLENGE_PRICES.join(', $')}`,
+      })
+      .optional(),
+  ),
 });
 
 const endsAfterStart = (data: { startDate?: Date; endDate?: Date }) =>
@@ -253,6 +264,7 @@ type IncludedChallenge = {
   endDate: Date | null;
   durationDays: number | null;
   dailyFee: Prisma.Decimal | null;
+  entryFee: Prisma.Decimal | null;
   challengeFees: unknown[];
   _count: { userChallenges: number };
   userChallenges: Array<{ user: { profileImage: string | null } | null }>;
@@ -488,8 +500,10 @@ export const submitChallenge = async (req: Request, res: Response): Promise<void
     const challenge = await prisma.challenge.create({
       data: {
         ...data,
-        // Joiners pay the standard daily rate; the challenge runs for durationDays from its start.
+        // Joiners pay the standard daily rate (7, 14 or 30 days are all listed prices);
+        // the challenge runs for durationDays from its start.
         dailyFee: DEFAULT_DAILY_FEE,
+        entryFee: DEFAULT_DAILY_FEE * data.durationDays,
         endDate: new Date(data.scheduledAt.getTime() + (data.durationDays - 1) * 86400000),
         status: 'ACTIVE',
         approvalStatus: 'PENDING',

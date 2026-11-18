@@ -377,7 +377,7 @@ describe('App Store Server Notifications V2', () => {
   });
 
   it('hands one-time purchases to their own handler instead of treating them as subscriptions', async () => {
-    signTransaction('jws-challenge', { productId: 'challenge_7_days', transactionId: 'tx-challenge' });
+    signTransaction('jws-challenge', { productId: 'challenge_usd_7', transactionId: 'tx-challenge' });
     const signed = signNotification('notification-refund', {
       notificationType: 'REFUND',
       data: { signedTransactionInfo: 'jws-challenge' },
@@ -387,7 +387,7 @@ describe('App Store Server Notifications V2', () => {
     const result = await handleAppStoreNotification(signed, handleOneTimePurchase);
 
     expect(handleOneTimePurchase).toHaveBeenCalledWith(
-      expect.objectContaining({ productId: 'challenge_7_days', transactionId: 'tx-challenge' }),
+      expect.objectContaining({ productId: 'challenge_usd_7', transactionId: 'tx-challenge' }),
       'REFUND',
     );
     expect(result).toEqual({ handled: true, notificationType: 'REFUND', reason: 'challenge_refunded' });

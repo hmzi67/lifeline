@@ -576,6 +576,8 @@ model Challenge {
   scheduledAt        DateTime?           @map("scheduled_at")
   durationDays       Int?                @map("duration_days")
   dailyFee           Decimal?            @map("daily_fee") @db.Decimal(10, 2)
+  /// What joining costs, in USD: 0 or null is free; paid values come from CHALLENGE_PRICES so iOS can sell them.
+  entryFee           Decimal?            @map("entry_fee") @db.Decimal(10, 2)
   createdAt          DateTime?           @default(now()) @map("created_at")
   challengeExercises ChallengeExercise[]
   challengeDiets     ChallengeDiet[]

@@ -5,7 +5,7 @@ import { getOrCreateAppAccountToken, verifySignedTransaction } from './appStoreS
 import { challengePhase, isChallengeVisible } from './challengeTimeline.js';
 import { notifyUser } from './notificationService.js';
 
-/** Lengths a user can choose for a challenge they submit; each maps to an App Store product. */
+/** Lengths a user can choose for a challenge they submit. */
 export const CHALLENGE_DURATIONS = [7, 14, 30] as const;
 export type ChallengeDuration = (typeof CHALLENGE_DURATIONS)[number];
 
@@ -15,8 +15,22 @@ export const DEFAULT_DAILY_FEE = 1;
 /** Stripe metadata marking a PaymentIntent as a challenge fee rather than a subscription. */
 export const CHALLENGE_FEE_KIND = 'challenge_fee';
 
-/** Consumable App Store products, one per length, priced at DEFAULT_DAILY_FEE x days. */
-export const challengeAppleProductId = (days: number) => `challenge_${days}_days`;
+/**
+ * The prices, in whole US dollars, a paid challenge can cost. App Store prices are fixed per
+ * product, so each price is a consumable product (challenge_usd_<price>) and every paid
+ * challenge, whatever its length, can be bought on iOS. Adding a price needs its product in
+ * App Store Connect first.
+ */
+export const CHALLENGE_PRICES = [1, 2, 3, 5, 7, 10, 14, 15, 20, 21, 25, 30, 40, 50, 60, 75, 90, 100] as const;
+export const isChallengePrice = (usd: number) => (CHALLENGE_PRICES as readonly number[]).includes(usd);
+export const challengeAppleProductId = (usd: number) => `challenge_usd_${usd}`;
+const CHALLENGE_PRODUCT_ID = /^challenge_usd_(\d+)$/;
+
+/** The price in US dollars of a challenge product, or null for any other product. */
+export const challengeProductPrice = (productId: string | undefined | null): number | null => {
+  const usd = Number(CHALLENGE_PRODUCT_ID.exec(productId ?? '')?.[1] ?? NaN);
+  return isChallengePrice(usd) ? usd : null;
+};
 
 export class ChallengePaymentError extends Error {
   constructor(message: string, readonly statusCode: number) {
@@ -25,17 +39,25 @@ export class ChallengePaymentError extends Error {
   }
 }
 
-type PricedChallenge = { dailyFee: Prisma.Decimal | number | null; durationDays: number | null };
+type PricedChallenge = {
+  entryFee?: Prisma.Decimal | number | null;
+  dailyFee: Prisma.Decimal | number | null;
+  durationDays: number | null;
+};
 
-export const challengePricing = ({ dailyFee, durationDays }: PricedChallenge) => {
+const legacyPrice = ({ dailyFee, durationDays }: PricedChallenge) => {
   const fee = dailyFee === null ? 0 : Number(dailyFee);
   const days = durationDays ?? 0;
-  const price = fee > 0 && days > 0 ? Math.round(fee * days * 100) / 100 : 0;
-  // App Store prices are fixed per product, so only the standard rate and lengths can be sold there.
-  const appleProductId =
-    price > 0 && fee === DEFAULT_DAILY_FEE && (CHALLENGE_DURATIONS as readonly number[]).includes(days)
-      ? challengeAppleProductId(days)
-      : null;
+  return fee > 0 && days > 0 ? Math.round(fee * days * 100) / 100 : 0;
+};
+
+/** What joining costs: the entry fee, or daily fee x days for a challenge saved before entry fees. */
+export const challengePricing = (challenge: PricedChallenge) => {
+  const price = challenge.entryFee === null || challenge.entryFee === undefined
+    ? legacyPrice(challenge)
+    : Math.max(0, Number(challenge.entryFee));
+  // An older price outside the list has no App Store product, so it cannot be bought on iOS.
+  const appleProductId = isChallengePrice(price) ? challengeAppleProductId(price) : null;
   return { isPaid: price > 0, price, appleProductId };
 };
 
@@ -200,7 +222,7 @@ export const startAppleCheckout = async (challengeId: string, userId: string) =>
   });
   if (pending) {
     // The purchase is matched to the newest pending fee for its product, so going back to
-    // a challenge after opening another one of the same length must make this one newest again.
+    // a challenge after opening another one at the same price must make this one newest again.
     await prisma.challengeFee.update({ where: { id: pending.id }, data: { createdAt: new Date() } });
   } else {
     await prisma.challengeFee.create({
@@ -216,7 +238,7 @@ export const startAppleCheckout = async (challengeId: string, userId: string) =>
 };
 
 export const isChallengeProductId = (productId: string | undefined | null) =>
-  !!productId && /^challenge_\d+_days$/.test(productId);
+  challengeProductPrice(productId) !== null;
 
 /**
  * Keeps a paid purchase that no challenge is waiting for (the challenge was removed or its
@@ -224,12 +246,11 @@ export const isChallengeProductId = (productId: string | undefined | null) =>
  * UNMATCHED so support can refund it or add the user to a challenge by hand.
  */
 const recordUnmatchedPurchase = async (userId: string, transactionId: string, productId: string) => {
-  const days = Number(/^challenge_(\d+)_days$/.exec(productId)?.[1] ?? 0);
   try {
     const fee = await prisma.challengeFee.create({
       data: {
         userId,
-        amount: days * DEFAULT_DAILY_FEE,
+        amount: challengeProductPrice(productId) ?? 0,
         method: 'apple',
         status: 'UNMATCHED',
         providerReference: transactionId,

@@ -98,7 +98,7 @@ describe('submitChallenge', () => {
 
     expect(res.statusCode).toBe(201);
     const { data } = mockPrisma.challenge.create.mock.calls[0][0];
-    expect(data).toMatchObject({ approvalStatus: 'PENDING', submittedById: 'user-1', status: 'ACTIVE', dailyFee: 1, durationDays: 7 });
+    expect(data).toMatchObject({ approvalStatus: 'PENDING', submittedById: 'user-1', status: 'ACTIVE', dailyFee: 1, entryFee: 7, durationDays: 7 });
     // A 7-day challenge ends on its 7th day.
     expect(Math.round((data.endDate.getTime() - data.scheduledAt.getTime()) / 86400000)).toBe(6);
     expect(data.scheduledAt).toBeInstanceOf(Date);
@@ -177,5 +177,29 @@ describe('joinChallenge', () => {
       res as any,
     );
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('admin entry fee', () => {
+  const { createChallenge } =
+    require('../src/controllers/challengeController') as typeof import('../src/controllers/challengeController');
+  const adminCreate = async (entryFee: unknown) => {
+    mockPrisma.challenge.findFirst.mockResolvedValue(null);
+    mockPrisma.challenge.create.mockImplementation(async ({ data }: any) => storedChallenge(data));
+    const res = createResponse();
+    await createChallenge({ body: { name: 'Run', description: 'Run daily', durationDays: 45, entryFee } } as any, res as any);
+    return res;
+  };
+
+  it('accepts a listed price for any length, and free', async () => {
+    expect((await adminCreate(25)).statusCode).toBe(201);
+    expect(mockPrisma.challenge.create.mock.calls[0][0].data.entryFee).toBe(25);
+    expect((await adminCreate(0)).statusCode).toBe(201);
+  });
+
+  it('refuses a price that has no App Store product', async () => {
+    const res = await adminCreate(4);
+    expect(res.statusCode).toBe(400);
+    expect(mockPrisma.challenge.create).not.toHaveBeenCalled();
   });
 });

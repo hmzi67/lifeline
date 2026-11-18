@@ -36,10 +36,14 @@ jest.mock('../src/services/notificationService', () => ({
 }));
 
 const {
+  CHALLENGE_DURATIONS,
+  CHALLENGE_PRICES,
   challengePricing,
+  challengeProductPrice,
   confirmStripeCheckout,
   handleAppleChallengeNotification,
   handleChallengePaymentIntent,
+  isChallengePrice,
   recordApplePurchase,
   startAppleCheckout,
   startStripeCheckout,
@@ -107,10 +111,42 @@ beforeEach(() => {
 });
 
 describe('challengePricing', () => {
-  it('charges the daily fee for each day and maps standard lengths to App Store products', () => {
-    expect(challengePricing({ dailyFee: 1, durationDays: 7 })).toEqual({ isPaid: true, price: 7, appleProductId: 'challenge_7_days' });
-    expect(challengePricing({ dailyFee: 2, durationDays: 7 })).toEqual({ isPaid: true, price: 14, appleProductId: null });
+  it('charges the entry fee whatever the length and sells it through that price product', () => {
+    expect(challengePricing({ entryFee: 25, dailyFee: null, durationDays: 21 }))
+      .toEqual({ isPaid: true, price: 25, appleProductId: 'challenge_usd_25' });
+    expect(challengePricing({ entryFee: 10, dailyFee: null, durationDays: 45 }))
+      .toEqual({ isPaid: true, price: 10, appleProductId: 'challenge_usd_10' });
+    expect(challengePricing({ entryFee: 0, dailyFee: 1, durationDays: 7 }))
+      .toEqual({ isPaid: false, price: 0, appleProductId: null });
+  });
+
+  it('prices a challenge saved before entry fees at daily fee x days', () => {
+    expect(challengePricing({ dailyFee: 1, durationDays: 7 })).toEqual({ isPaid: true, price: 7, appleProductId: 'challenge_usd_7' });
+    expect(challengePricing({ entryFee: null, dailyFee: 1, durationDays: 30 }).appleProductId).toBe('challenge_usd_30');
     expect(challengePricing({ dailyFee: null, durationDays: 7 })).toEqual({ isPaid: false, price: 0, appleProductId: null });
+  });
+
+  it('has no App Store product for a price outside the list', () => {
+    expect(challengePricing({ entryFee: 4, dailyFee: null, durationDays: 7 }))
+      .toEqual({ isPaid: true, price: 4, appleProductId: null });
+    expect(challengePricing({ dailyFee: 1.5, durationDays: 3 }).appleProductId).toBeNull();
+    expect(challengePricing({ entryFee: 120, dailyFee: null, durationDays: 30 }).appleProductId).toBeNull();
+  });
+
+  it('lists only prices that each have a product, including every user-submitted length', () => {
+    expect([...CHALLENGE_PRICES]).toEqual([1, 2, 3, 5, 7, 10, 14, 15, 20, 21, 25, 30, 40, 50, 60, 75, 90, 100]);
+    for (const days of CHALLENGE_DURATIONS) expect(isChallengePrice(days)).toBe(true);
+  });
+});
+
+describe('challengeProductPrice', () => {
+  it('reads the price from challenge products only', () => {
+    expect(challengeProductPrice('challenge_usd_14')).toBe(14);
+    expect(challengeProductPrice('challenge_usd_0')).toBeNull();
+    expect(challengeProductPrice('challenge_usd_4')).toBeNull();
+    expect(challengeProductPrice('challenge_usd_101')).toBeNull();
+    expect(challengeProductPrice('challenge_7_days')).toBeNull();
+    expect(challengeProductPrice('com.lifeline.vip.monthly')).toBeNull();
   });
 });
 
@@ -171,7 +207,7 @@ describe('Stripe checkout', () => {
 describe('App Store purchase', () => {
   const transaction = (overrides: Record<string, unknown> = {}) => ({
     transactionId: 'tx-1',
-    productId: 'challenge_7_days',
+    productId: 'challenge_usd_7',
     appAccountToken: 'token-user-1',
     ...overrides,
   });
@@ -264,13 +300,13 @@ describe('App Store refund notifications', () => {
       data: { userId: 'user-1', challengeId: 'challenge-1', amount: 7, method: 'apple', status: 'PENDING' },
     });
     mockVerifySignedTransaction.mockResolvedValue({
-      transactionId: 'tx-1', productId: 'challenge_7_days', appAccountToken: 'token-user-1',
+      transactionId: 'tx-1', productId: 'challenge_usd_7', appAccountToken: 'token-user-1',
     });
     await recordApplePurchase('user-1', 'jws');
   });
 
   it('refunds the fee and removes the user once, however often Apple sends it', async () => {
-    const notification = { productId: 'challenge_7_days', transactionId: 'tx-1' };
+    const notification = { productId: 'challenge_usd_7', transactionId: 'tx-1' };
 
     expect(await handleAppleChallengeNotification(notification, 'REFUND'))
       .toEqual({ handled: true, reason: 'challenge_refunded' });
@@ -283,7 +319,7 @@ describe('App Store refund notifications', () => {
   it('leaves subscriptions and non-refund notifications alone', async () => {
     expect(await handleAppleChallengeNotification({ productId: 'lifeline_vip_monthly', transactionId: 'tx-9' }, 'REFUND'))
       .toBeNull();
-    expect(await handleAppleChallengeNotification({ productId: 'challenge_7_days', transactionId: 'tx-1' }, 'ONE_TIME_CHARGE'))
+    expect(await handleAppleChallengeNotification({ productId: 'challenge_usd_7', transactionId: 'tx-1' }, 'ONE_TIME_CHARGE'))
       .toEqual({ handled: false, reason: 'challenge_purchase' });
     expect(fees[0].status).toBe('PAID');
   });
