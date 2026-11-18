@@ -126,11 +126,11 @@ export const getCurrentUser = async (req: Request, res: Response) => {
       });
     }
 
-    // Only whether a password exists (it decides how account deletion is confirmed).
+    // Only whether deletion asks for the password (see confirmsDeletionWithPassword).
     const { password, ...profile } = user;
     res.status(200).json({
       success: true,
-      data: { user: { ...profile, hasPassword: !!password } },
+      data: { user: { ...profile, hasPassword: confirmsDeletionWithPassword({ ...profile, password }) } },
     });
   } catch (error) {
     console.error('Get current user error:', error);
@@ -952,6 +952,17 @@ export const exportOwnData = async (req: Request, res: Response) => {
 /** Typed by accounts that sign in with Google/Apple and so have no password to re-enter. */
 export const ACCOUNT_DELETION_PHRASE = 'DELETE';
 
+/**
+ * Password-only accounts re-enter their password to delete. Accounts that also sign in with
+ * Google/Apple (an email sign-up later linked to Google, say) type the phrase instead: many of
+ * them never used, or no longer know, the password from that first sign-up.
+ */
+const confirmsDeletionWithPassword = (user: {
+  password: string | null;
+  googleId: string | null;
+  subject: string | null;
+}) => !!user.password && !user.googleId && !user.subject;
+
 // Delete the caller's own account (DELETE /account and DELETE /profile/:id).
 // A valid token alone is not enough: password accounts re-enter their
 // password; Google/Apple accounts type ACCOUNT_DELETION_PHRASE.
@@ -974,7 +985,7 @@ export const deleteOwnAccount = async (req: Request, res: Response) => {
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, password: true },
+      select: { id: true, email: true, password: true, googleId: true, subject: true },
     });
 
     if (!user) {
@@ -984,7 +995,7 @@ export const deleteOwnAccount = async (req: Request, res: Response) => {
       });
     }
 
-    if (user.password) {
+    if (user.password && (confirmsDeletionWithPassword(user) || typeof password === 'string')) {
       if (typeof password !== 'string' || !password) {
         return res.status(400).json({
           success: false,
