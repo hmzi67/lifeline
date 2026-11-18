@@ -159,18 +159,20 @@ export default function Plan() {
                 </p>
               </div>
             ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl w-full">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl w-full">
               {loading ? (
-                <div className="col-span-3 text-center py-12 text-gray-500">Loading plans...</div>
+                <div className="col-span-full text-center py-12 text-gray-500">Loading plans...</div>
               ) : plans.length === 0 ? (
-                <div className="col-span-3 text-center py-12 text-gray-500">No plans available yet.</div>
+                <div className="col-span-full text-center py-12 text-gray-500">No plans available yet.</div>
               ) : (
                 plans.map((plan, index) => (
                   <PricingCard
                     key={plan.id}
                     title={plan.name}
                     price={String(plan.price)}
-                    originalPrice={plan.originalPrice != null ? `$${plan.originalPrice}/m` : ''}
+                    originalPrice={plan.originalPrice}
+                    durationMonths={plan.durationMonths}
+                    description={plan.description}
                     features={plan.features}
                     hasCoupon
                     isHighlighted={plan.isHighlighted}

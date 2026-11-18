@@ -1,10 +1,21 @@
 import React, { useState } from 'react';
 import api from '@/lib/axios';
 
+/** "month", "3 months", "year": what one payment of a plan covers. */
+const planPeriod = (durationMonths: number): string => {
+  if (durationMonths === 12) return 'year';
+  if (durationMonths <= 1) return 'month';
+  return `${durationMonths} months`;
+};
+
 interface PricingCardProps {
   title: string;
   price: string;
-  originalPrice: string;
+  /** Crossed-out earlier price, in USD; null for none. */
+  originalPrice: number | null;
+  durationMonths: number;
+  /** Shown under the price; a generic line is used when empty. */
+  description?: string | null;
   features: string[];
   hasCoupon?: boolean;
   isSelected: boolean;
@@ -19,6 +30,8 @@ export const PricingCard: React.FC<PricingCardProps> = ({
   title,
   price,
   originalPrice,
+  durationMonths,
+  description,
   features,
   hasCoupon = true,
   isSelected,
@@ -33,6 +46,7 @@ export const PricingCard: React.FC<PricingCardProps> = ({
   const [couponStatus, setCouponStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
   const [couponError, setCouponError] = useState('');
   const [finalPrice, setFinalPrice] = useState(price);
+  const period = planPeriod(durationMonths);
   const [appliedCode, setAppliedCode] = useState<string | undefined>(undefined);
 
   const handleCouponSubmit = async () => {
@@ -103,23 +117,24 @@ export const PricingCard: React.FC<PricingCardProps> = ({
 
       {/* Price Section */}
       <div className="text-center mb-6">
-        {originalPrice && (
+        {originalPrice != null && (
           <div className={`
             line-through inline-block px-3 py-1 mb-2 font-medium rounded-full text-sm sm:text-lg
             ${isSelected ? 'bg-white text-primary' : 'bg-primary text-white'}
           `}>
-            {originalPrice}
+            ${originalPrice}/{period}
           </div>
         )}
         <div className="mb-2 inline-flex items-baseline">
           <span className={`text-sm font-bold ${isSelected ? 'text-white' : 'text-gray-900'}`}>$</span>
           <span className={`text-3xl sm:text-5xl font-bold ml-1 ${isSelected ? 'text-white' : 'text-gray-900'}`}>{finalPrice}</span>
-          <span className={`text-base sm:text-lg font-bold ${isSelected ? 'text-white' : 'text-gray-900'}`}>/m</span>
+          <span className={`text-base sm:text-lg font-bold ${isSelected ? 'text-white' : 'text-gray-900'}`}>/{period}</span>
         </div>
 
         {/* Description */}
         <p className={`mt-4 text-sm leading-relaxed mb-6 ${isSelected ? 'text-white/90' : 'text-gray-600'}`}>
-          Get our Monthly Plan, now discounted to just ${finalPrice}! Act now and start achieving your fitness goals for less!
+          {description?.trim()
+            || `Full access to Lifeline for ${durationMonths === 12 ? 'a year' : `${durationMonths <= 1 ? '1 month' : `${durationMonths} months`}`} at just $${finalPrice}.`}
         </p>
 
         {/* Coupon Section */}

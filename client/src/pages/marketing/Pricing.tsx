@@ -61,13 +61,15 @@ const Pricing: React.FC = () => {
           ) : plans.length === 0 ? (
             <div className="text-center py-12 text-gray-500">No plans available yet.</div>
           ) : (
-            <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
               {plans.map((plan, index) => (
                 <PricingCard
                   key={plan.id}
                   title={plan.name}
                   price={String(plan.price)}
-                  originalPrice={plan.originalPrice != null ? `$${plan.originalPrice}/m` : ''}
+                  originalPrice={plan.originalPrice}
+                  durationMonths={plan.durationMonths}
+                  description={plan.description}
                   features={plan.features}
                   hasCoupon
                   isHighlighted={plan.isHighlighted}
@@ -81,8 +83,8 @@ const Pricing: React.FC = () => {
 
           <div className="text-center mt-12">
             <p className="text-gray-600 max-w-2xl mx-auto mb-6">
-              Unlock our library of meditations, sleep sounds, and more. We'll send you a reminder that your trial is
-              ending soon. You'll be charged on March 28, cancel anytime before.
+              Unlock our library of meditations, sleep sounds, and more. We'll remind you before your trial ends,
+              and you can cancel anytime before you're charged.
             </p>
           </div>
         </div>
