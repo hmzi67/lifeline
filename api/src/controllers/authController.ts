@@ -100,7 +100,26 @@ export const signup = async (req: Request, res: Response) => {
       },
     });
 
-    if (existingUser) {
+    // A sign-up that was never verified (a mistyped address, an abandoned attempt) does not
+    // hold the email: signing up again replaces its password and sends a fresh code. Only
+    // whoever can read the inbox can finish it, as with a first sign-up.
+    const unverifiedSignup = existingUser
+      && existingUser.email === email
+      && existingUser.status === 'pending'
+      && !existingUser.isEmailVerified
+      && !existingUser.googleId
+      && !existingUser.subject
+      ? existingUser
+      : null;
+    if (unverifiedSignup && username && username !== unverifiedSignup.username
+      && await prisma.user.findUnique({ where: { username } })) {
+      return res.status(400).json({
+        success: false,
+        message: 'User with this username already exists',
+      });
+    }
+
+    if (existingUser && !unverifiedSignup) {
       const field = existingUser.email === email ? 'email' : 'username';
       return res.status(400).json({
         success: false,
@@ -114,35 +133,53 @@ export const signup = async (req: Request, res: Response) => {
 
     // The typed name is a display name and need not be unique; the username is
     // generated from the email unless the client chose one.
-    const finalUsername = username || (await generateUniqueUsername(email.split('@')[0]));
+    const finalUsername = unverifiedSignup
+      ? username || unverifiedSignup.username
+      : username || (await generateUniqueUsername(email.split('@')[0]));
     const displayName = name?.trim() || null;
 
     // Generate OTP for email verification
     const verification = issueOtp('verify_email');
     const { otp } = verification;
 
-    // Create user
-    const user = await prisma.user.create({
-      data: {
-        username: finalUsername,
-        displayName,
-        email,
-        password: hashedPassword,
-        ...verification,
-        status: 'pending', // Set status as pending until email verification
-        isEmailVerified: false,
-      },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        displayName: true,
-        roleId: true,
-        isEmailVerified: true,
-        status: true,
-        createdAt: true,
-      },
-    });
+    const signupSelect = {
+      id: true,
+      email: true,
+      username: true,
+      displayName: true,
+      roleId: true,
+      isEmailVerified: true,
+      status: true,
+      createdAt: true,
+    } as const;
+
+    // Create the user, or restart an unverified sign-up (its old sessions end).
+    const user = unverifiedSignup
+      ? (await prisma.$transaction([
+        prisma.refreshToken.deleteMany({ where: { userId: unverifiedSignup.id } }),
+        prisma.user.update({
+          where: { id: unverifiedSignup.id },
+          data: {
+            username: finalUsername,
+            displayName,
+            password: hashedPassword,
+            ...verification,
+          },
+          select: signupSelect,
+        }),
+      ]))[1]
+      : await prisma.user.create({
+        data: {
+          username: finalUsername,
+          displayName,
+          email,
+          password: hashedPassword,
+          ...verification,
+          status: 'pending', // Set status as pending until email verification
+          isEmailVerified: false,
+        },
+        select: signupSelect,
+      });
 
     // Generate tokens - user.id is already a string (CUID)
     const { accessToken, refreshToken } = generateTokens(
