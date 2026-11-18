@@ -21,8 +21,10 @@ const mockPrisma = {
   },
   subscriptionPayment: {
     findUnique: jest.fn(),
+    update: jest.fn(),
   },
   user: {
+    count: jest.fn(),
     findFirst: jest.fn(),
     findUnique: jest.fn(),
     updateMany: jest.fn(),
@@ -174,10 +176,36 @@ describe('StoreKit App Store subscription sync', () => {
     const signed = signTransaction('jws-foreign', {
       appAccountToken: '11111111-2222-4333-8444-555555555555',
     });
+    mockPrisma.user.count.mockResolvedValue(1); // that account still exists
 
     await expect(syncAppStoreTransactions('user-one', [signed]))
       .rejects.toMatchObject({ statusCode: 409 });
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('restores a purchase whose Lifeline account was deleted to the account now signed in', async () => {
+    const orphanToken = '11111111-2222-4333-8444-555555555555';
+    const signed = signTransaction('jws-orphan', { appAccountToken: orphanToken });
+    mockPrisma.user.count.mockResolvedValue(0); // no account holds that token any more
+
+    await expect(syncAppStoreTransactions('user-one', [signed])).resolves.toBeDefined();
+    expect(mockPrisma.user.count).toHaveBeenCalledWith({
+      where: { appStoreAccountToken: { equals: orphanToken, mode: 'insensitive' } },
+    });
+    expect(mockPrisma.$transaction).toHaveBeenCalled();
+  });
+
+  it('lets a deleted account\'s kept payment release the subscription for the new account', async () => {
+    const signed = signTransaction('jws-kept', { appAccountToken: '11111111-2222-4333-8444-555555555555' });
+    mockPrisma.user.count.mockResolvedValue(0);
+    mockPrisma.subscriptionPayment.findUnique.mockResolvedValue({ id: 'payment-of-deleted-user', userId: null });
+
+    await expect(syncAppStoreTransactions('user-one', [signed])).resolves.toBeDefined();
+    expect(mockPrisma.subscriptionPayment.update).toHaveBeenCalledWith({
+      where: { id: 'payment-of-deleted-user' },
+      data: { appStoreOriginalTransactionId: null },
+    });
+    expect(mockPrisma.$transaction).toHaveBeenCalled();
   });
 
   it('rejects an Apple subscription already linked to another user', async () => {

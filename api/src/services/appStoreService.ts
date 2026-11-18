@@ -214,6 +214,20 @@ const tokensMatch = (left?: string | null, right?: string | null): boolean => (
 );
 
 /**
+ * Whether a purchase may be given to this user. A purchase carries the appAccountToken of the
+ * Lifeline account that bought it; another account may not take it while that account exists.
+ * Once that account is deleted no one owns the purchase, but Apple keeps billing the Apple ID,
+ * so whoever signs in on it (usually the same person, signed up again) may restore it.
+ */
+const mayClaimPurchase = async (purchaseToken: string | undefined, userToken: string | null) => {
+  if (!purchaseToken || tokensMatch(purchaseToken, userToken)) return true;
+  const holders = await prisma.user.count({
+    where: { appStoreAccountToken: { equals: purchaseToken, mode: 'insensitive' } },
+  });
+  return holders === 0;
+};
+
+/**
  * Reads the authoritative subscription state from the App Store Server API.
  * Returns null when the API is not configured or unavailable so callers can
  * fall back to the Apple-signed data they already verified.
@@ -349,13 +363,21 @@ const applySnapshot = async (
 
   const claimedPayment = await prisma.subscriptionPayment.findUnique({
     where: { appStoreOriginalTransactionId: originalTransactionId },
-    select: { userId: true },
+    select: { id: true, userId: true },
   });
   if (claimedPayment?.userId && claimedPayment.userId !== userId) {
     throw new AppStoreServiceError(
       'This App Store subscription is already linked to a different Lifeline account',
       409,
     );
+  }
+  if (claimedPayment && !claimedPayment.userId) {
+    // Left behind by a deleted account (deletion keeps payments for the books). It keeps its
+    // history but lets go of the subscription, which can belong to one payment only.
+    await prisma.subscriptionPayment.update({
+      where: { id: claimedPayment.id },
+      data: { appStoreOriginalTransactionId: null },
+    });
   }
 
   const now = new Date();
@@ -595,10 +617,10 @@ export const syncAppStoreTransactions = async (
   }
 
   // A transaction bought under another Lifeline account carries that account's token.
-  const owned = verified.filter(entry => (
-    !entry.transaction.appAccountToken
-    || tokensMatch(entry.transaction.appAccountToken, user.appStoreAccountToken)
-  ));
+  const claimable = await Promise.all(verified.map(entry => (
+    mayClaimPurchase(entry.transaction.appAccountToken, user.appStoreAccountToken)
+  )));
+  const owned = verified.filter((_entry, index) => claimable[index]);
   if (owned.length === 0) {
     throw new AppStoreServiceError(
       'This App Store subscription was purchased with a different Lifeline account',
@@ -618,10 +640,7 @@ export const syncAppStoreTransactions = async (
   const latest = await fetchLatestSnapshot(best.transaction.originalTransactionId!, best.environment)
     ?? { environment: best.environment, transaction: best.transaction };
 
-  if (
-    latest.transaction.appAccountToken
-    && !tokensMatch(latest.transaction.appAccountToken, user.appStoreAccountToken)
-  ) {
+  if (!(await mayClaimPurchase(latest.transaction.appAccountToken, user.appStoreAccountToken))) {
     throw new AppStoreServiceError(
       'This App Store subscription was purchased with a different Lifeline account',
       409,
